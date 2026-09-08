@@ -38,6 +38,69 @@ def read_xmp_metadata(uploaded_file):
     return parsed[0] if parsed else {}
 
 
+def write_xmp_metadata(uploaded_file, fields):
+    """Schreibt die bearbeiteten XMP-Felder in eine neue Bilddatei."""
+    exiftool = shutil.which("exiftool")
+    if exiftool is None:
+        raise RuntimeError(
+            "ExifTool wurde nicht gefunden. Installiere es mit "
+            "'sudo apt install libimage-exiftool-perl' und starte die App neu."
+        )
+
+    suffix = Path(uploaded_file.name).suffix or ".bin"
+    with tempfile.TemporaryDirectory() as temp_dir:
+        source = Path(temp_dir) / f"original{suffix}"
+        output = Path(temp_dir) / f"{Path(uploaded_file.name).stem}-mit-xmp{suffix}"
+        source.write_bytes(uploaded_file.getvalue())
+
+        arguments = [exiftool, "-o", str(output)]
+        for tag, value in fields.items():
+            if value:
+                if tag == "XMP-dc:Subject":
+                    arguments.append(f"-{tag}=")
+                    arguments.extend(f"-{tag}={keyword}" for keyword in value)
+                else:
+                    arguments.append(f"-{tag}={value}")
+        arguments.append(str(source))
+
+        result = subprocess.run(
+            arguments,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            message = result.stderr.strip() or "ExifTool konnte die Metadaten nicht schreiben."
+            raise ValueError(message)
+        return output.read_bytes()
+
+
+def remove_metadata(uploaded_file):
+    """Erstellt eine Kopie des Bildes ohne eingebettete Metadaten."""
+    exiftool = shutil.which("exiftool")
+    if exiftool is None:
+        raise RuntimeError(
+            "ExifTool wurde nicht gefunden. Installiere es mit "
+            "'sudo apt install libimage-exiftool-perl' und starte die App neu."
+        )
+
+    suffix = Path(uploaded_file.name).suffix or ".bin"
+    with tempfile.TemporaryDirectory() as temp_dir:
+        source = Path(temp_dir) / f"original{suffix}"
+        output = Path(temp_dir) / f"{Path(uploaded_file.name).stem}-ohne-metadaten{suffix}"
+        source.write_bytes(uploaded_file.getvalue())
+        result = subprocess.run(
+            [exiftool, "-all=", "-o", str(output), str(source)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            message = result.stderr.strip() or "ExifTool konnte die Metadaten nicht entfernen."
+            raise ValueError(message)
+        return output.read_bytes()
+
+
 st.title("XMP-Metadaten auslesen")
 st.write("Bild ablegen, Metadaten prüfen und bei Bedarf als JSON herunterladen.")
 
@@ -80,3 +143,56 @@ else:
             file_name=f"{Path(uploaded_file.name).stem}-metadaten.json",
             mime="application/json",
         )
+
+        st.subheader("Eigene XMP-Metadaten hinzufügen oder ändern")
+        with st.form("xmp_editor"):
+            title = st.text_input("Titel", value=str(metadata.get("XMP-dc:Title", "")))
+            description = st.text_area(
+                "Beschreibung",
+                value=str(metadata.get("XMP-dc:Description", "")),
+            )
+            creator = st.text_input("Urheber / Autor", value=str(metadata.get("XMP-dc:Creator", "")))
+            rights = st.text_input("Copyright / Rechte", value=str(metadata.get("XMP-dc:Rights", "")))
+            keywords = st.text_input(
+                "Schlagwörter",
+                value="",
+                help="Mehrere Schlagwörter mit Komma trennen.",
+            )
+            save_metadata = st.form_submit_button("Neue Bilddatei erzeugen")
+
+        if save_metadata:
+            fields = {
+                "XMP-dc:Title": title.strip(),
+                "XMP-dc:Description": description.strip(),
+                "XMP-dc:Creator": creator.strip(),
+                "XMP-dc:Rights": rights.strip(),
+                "XMP-dc:Subject": [keyword.strip() for keyword in keywords.split(",") if keyword.strip()],
+            }
+            try:
+                updated_file = write_xmp_metadata(uploaded_file, fields)
+            except (RuntimeError, ValueError) as error:
+                st.error(str(error))
+            else:
+                st.success("Die neue Bilddatei wurde erstellt.")
+                st.download_button(
+                    "Bilddatei mit XMP herunterladen",
+                    data=updated_file,
+                    file_name=f"{Path(uploaded_file.name).stem}-mit-xmp{Path(uploaded_file.name).suffix}",
+                    mime=uploaded_file.type or "application/octet-stream",
+                )
+
+        st.subheader("Metadaten aus Bild entfernen")
+        st.write("Erstellt eine neue Kopie ohne EXIF-, XMP- und weitere eingebettete Metadaten.")
+        if st.button("Alle Metadaten entfernen"):
+            try:
+                clean_file = remove_metadata(uploaded_file)
+            except (RuntimeError, ValueError) as error:
+                st.error(str(error))
+            else:
+                st.success("Eine Kopie ohne Metadaten wurde erstellt.")
+                st.download_button(
+                    "Bild ohne Metadaten herunterladen",
+                    data=clean_file,
+                    file_name=f"{Path(uploaded_file.name).stem}-ohne-metadaten{Path(uploaded_file.name).suffix}",
+                    mime=uploaded_file.type or "application/octet-stream",
+                )
