@@ -44,15 +44,21 @@ Unter Windows lautet der Aktivierungsbefehl:
 streamlit run app.py
 ```
 
-Danach die angezeigte lokale URL im Browser öffnen. Das Feld **Bild hier ablegen
-oder auswählen** ist automatisch eine Drag-and-drop-Fläche. Nach dem Upload werden
-alle Felder aus dem XMP-Bereich angezeigt. Über **Metadaten als JSON herunterladen**
-kann die Ausgabe gespeichert werden. Im Formular darunter können Titel,
-Beschreibung, Urheber, Copyright und Schlagwörter ergänzt oder geändert werden.
-Mit **Neue Bilddatei erzeugen** wird eine neue Datei erstellt und zum Download
-angeboten. Das hochgeladene Original bleibt unverändert. Zusätzlich kann mit
-**Alle Metadaten entfernen** eine Kopie ohne EXIF-, XMP- und weitere eingebettete
-Metadaten erzeugt und heruntergeladen werden.
+Danach die angezeigte lokale URL im Browser öffnen. Das Feld **Bilder hier ablegen
+oder auswählen** ist automatisch eine Drag-and-drop-Fläche und akzeptiert mehrere
+Bilder gleichzeitig.
+
+Unter **Metadaten hinzufügen** stehen zwei Modi zur Verfügung:
+
+- **Auf alle Bilder anwenden:** Die gleichen Angaben werden auf alle Bilder
+	geschrieben. Die bearbeiteten Dateien werden gemeinsam als ZIP heruntergeladen.
+- **Nur ein Bild manuell bearbeiten:** Ein Bild auswählen, vorhandene XMP-Daten
+	prüfen oder ändern und dieses Bild einzeln herunterladen.
+
+Titel, Beschreibung, Urheber, Copyright und Schlagwörter können ergänzt oder
+geändert werden. Das hochgeladene Original bleibt unverändert. Im manuellen Modus
+können die Metadaten zusätzlich als JSON exportiert oder vollständig aus dem
+ausgewählten Bild entfernt werden.
 
 ## Hinweise
 
