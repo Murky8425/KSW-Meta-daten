@@ -47,7 +47,12 @@ streamlit run app.py
 Danach die angezeigte lokale URL im Browser öffnen. Das Feld **Bild hier ablegen
 oder auswählen** ist automatisch eine Drag-and-drop-Fläche. Nach dem Upload werden
 alle Felder aus dem XMP-Bereich angezeigt. Über **Metadaten als JSON herunterladen**
-kann die Ausgabe gespeichert werden.
+kann die Ausgabe gespeichert werden. Im Formular darunter können Titel,
+Beschreibung, Urheber, Copyright und Schlagwörter ergänzt oder geändert werden.
+Mit **Neue Bilddatei erzeugen** wird eine neue Datei erstellt und zum Download
+angeboten. Das hochgeladene Original bleibt unverändert. Zusätzlich kann mit
+**Alle Metadaten entfernen** eine Kopie ohne EXIF-, XMP- und weitere eingebettete
+Metadaten erzeugt und heruntergeladen werden.
 
 ## Hinweise
 
