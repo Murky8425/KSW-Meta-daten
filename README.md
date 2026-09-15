@@ -4,6 +4,41 @@ Django-Anwendung zum Auslesen und Bearbeiten von XMP-Metadaten in Bilddateien.
 
 ## Installation
 
+### Oracle Database konfigurieren
+
+Die Anwendung verwendet Oracle als Standarddatenbank. Vor dem Start müssen die
+Verbindungsvariablen gesetzt werden:
+
+```bash
+export ORACLE_NAME="FREEPDB1"
+export ORACLE_USER="Murky"
+export ORACLE_PASSWORD="Start1234567"
+export ORACLE_HOST="localhost"
+export ORACLE_PORT="1521"
+# Optional: kompletter Easy-Connect-DSN, z. B. localhost:1521/FREEPDB1
+# export ORACLE_DSN="localhost:1521/FREEPDB1"
+python manage.py migrate
+```
+
+`ORACLE_NAME` ist der Oracle-Service-Name. Die Tabelle
+`ausgelesene_metadaten` speichert pro Bild den SHA-256-Hash, die zentralen XMP-
+Felder und das vollständige von ExifTool gelieferte Metadaten-JSON. Änderungen
+an derselben Bilddatei aktualisieren den vorhandenen Datensatz.
+
+Für Oracle Free im Docker-Container können die Werte so gesetzt werden:
+
+```bash
+docker run -d --name oracle-free -p 1521:1521 \
+	-e ORACLE_PASSWORD="Start1234567" \
+	-e APP_USER="Murky" \
+	-e APP_USER_PASSWORD="Start1234567" \
+	gvenzl/oracle-free:23-slim
+```
+
+Das Datenbankpasswort des App-Benutzers wird anschließend für Django als
+`ORACLE_PASSWORD` gesetzt. `APP_USER` und `APP_USER_PASSWORD` konfigurieren
+den Oracle-Container; `ORACLE_USER` und `ORACLE_PASSWORD` konfigurieren Django.
+
 ### 1. ExifTool installieren
 
 ExifTool liest XMP zuverlässig aus JPG, PNG, TIFF, WebP und weiteren Formaten.
@@ -66,4 +101,13 @@ ausgewählten Bild entfernt werden.
 	Repository gespeichert.
 - Die App zeigt zusätzlich alle von ExifTool gefundenen Metadaten im aufklappbaren
 	Bereich an, nicht nur XMP.
+
+SELECT
+    id,
+    filename,
+    title,
+    creator,
+    rights,
+    extracted_at
+FROM ausgelesene_metadaten;
 

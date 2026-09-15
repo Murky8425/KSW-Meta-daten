@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 
@@ -41,8 +42,22 @@ TEMPLATES = [{
 # Einstiegspunkt für WSGI-fähige Server.
 WSGI_APPLICATION = "ksw_metadata.wsgi.application"
 
-# SQLite-Datenbank. Die Anwendung verwendet aktuell vor allem signierte Cookie-Sessions.
-DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": BASE_DIR / "db.sqlite3"}}
+# Oracle-Datenbank. Der Easy-Connect-DSN spricht den Oracle-Service (nicht SID)
+# des Docker-Containers an. Alle Werte können über Umgebungsvariablen
+# überschrieben werden.
+oracle_host = os.environ.get("ORACLE_HOST", "localhost")
+oracle_port = os.environ.get("ORACLE_PORT", "1521")
+oracle_service = os.environ.get("ORACLE_NAME", "FREEPDB1")
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.oracle",
+        "NAME": os.environ.get("ORACLE_DSN", f"{oracle_host}:{oracle_port}/{oracle_service}"),
+        "USER": os.environ.get("ORACLE_USER", "Murky"),
+        "PASSWORD": os.environ.get("ORACLE_PASSWORD", ""),
+        "HOST": "",
+        "PORT": "",
+    }
+}
 
 # Sprache und Zeitzone der Anwendung.
 LANGUAGE_CODE = "de-de"

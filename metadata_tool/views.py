@@ -1,4 +1,6 @@
 import base64
+import hashlib
+import io
 import json
 import mimetypes
 import shutil
@@ -7,7 +9,9 @@ from pathlib import Path
 
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
+from PIL import Image
 
+from .models import ExtractedMetadata
 from .services import create_zip, read_xmp_metadata, remove_metadata, write_xmp_metadata
 
 
@@ -32,6 +36,15 @@ def _fields(data):
     }
 
 
+def _preview_data(path, mime):
+    if path.suffix.lower() not in {".tif", ".tiff"}:
+        return f"data:{mime};base64,{base64.b64encode(path.read_bytes()).decode()}"
+    with Image.open(path) as image:
+        preview = io.BytesIO()
+        image.convert("RGB").save(preview, format="JPEG", quality=85)
+    return f"data:image/jpeg;base64,{base64.b64encode(preview.getvalue()).decode()}"
+
+
 def _file_context(directory):
     if directory is None:
         return []
@@ -39,9 +52,34 @@ def _file_context(directory):
     for path in sorted(directory.iterdir()):
         if path.is_file():
             mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
-            preview = f"data:{mime};base64,{base64.b64encode(path.read_bytes()).decode()}"
+            try:
+                preview = _preview_data(path, mime)
+            except (OSError, ValueError):
+                preview = ""
             files.append({"name": path.name, "path": path, "mime": mime, "preview": preview})
     return files
+
+
+def _save_metadata(file_path, filename, metadata):
+    fields = {
+        "title": metadata.get("XMP-dc:Title", ""),
+        "description": metadata.get("XMP-dc:Description", ""),
+        "creator": metadata.get("XMP-dc:Creator", ""),
+        "rights": metadata.get("XMP-dc:Rights", ""),
+        "keywords": metadata.get("XMP-dc:Subject", []),
+    }
+    ExtractedMetadata.objects.update_or_create(
+        file_hash=hashlib.sha256(file_path.read_bytes()).hexdigest(),
+        defaults={
+            "filename": filename,
+            "title": str(fields["title"]),
+            "description": str(fields["description"]),
+            "creator": str(fields["creator"]),
+            "rights": str(fields["rights"]),
+            "keywords": json.dumps(fields["keywords"], ensure_ascii=False),
+            "all_metadata": json.dumps(metadata, ensure_ascii=False, default=str),
+        },
+    )
 
 
 def index(request):
@@ -81,6 +119,7 @@ def index(request):
                 return _download(remove_metadata(selected_file["path"]), f"{Path(selected_name).stem}-ohne-metadaten{Path(selected_name).suffix}", selected_file["mime"])
             if action == "json":
                 metadata = read_xmp_metadata(selected_file["path"])
+                _save_metadata(selected_file["path"], selected_name, metadata)
                 return _download(json.dumps(metadata, ensure_ascii=False, indent=2).encode(), f"{Path(selected_name).stem}-metadaten.json", "application/json")
         except (RuntimeError, ValueError, json.JSONDecodeError) as exc:
             error = str(exc)
@@ -88,6 +127,7 @@ def index(request):
     if selected_file and not metadata:
         try:
             metadata = read_xmp_metadata(selected_file["path"])
+            _save_metadata(selected_file["path"], selected_name, metadata)
         except (RuntimeError, ValueError, json.JSONDecodeError) as exc:
             error = str(exc)
     return render(request, "metadata_tool/index.html", {
