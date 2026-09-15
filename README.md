@@ -67,3 +67,5 @@ ausgewählten Bild entfernt werden.
 	Repository gespeichert.
 - Die App zeigt zusätzlich alle von ExifTool gefundenen Metadaten im aufklappbaren
 	Bereich an, nicht nur XMP.
+
+# http://172.17.200.124:8501/
