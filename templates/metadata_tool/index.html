@@ -1,0 +1,45 @@
+{% load static %}
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>XMP-Metadaten auslesen</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --ink:#17313b; --muted:#61747a; --paper:#f6f3ed; --panel:#fffdf9; --line:#d8e1df; --teal:#087f79; --dark:#075d5b; --coral:#e76f51; }
+    * { box-sizing:border-box; } body { margin:0; background:var(--paper); color:var(--ink); font:16px 'DM Sans',sans-serif; }
+    main { max-width:1180px; margin:auto; padding:3rem 2rem 5rem; } h1,h2,h3 { font-family:'Space Grotesk',sans-serif; }
+    h1 { font-size:clamp(2.3rem,5vw,4.4rem); line-height:.98; margin:0; } h2 { margin-top:2rem; } p { color:var(--muted); }
+    .hero { background:linear-gradient(120deg,#e4f1ed,#fffdf9 62%,#f9dfd3); border:1px solid var(--line); border-radius:18px; padding:2.2rem 2.4rem; margin-bottom:1.6rem; box-shadow:0 18px 45px #17313b14; }
+    .eyebrow { color:var(--coral); font-size:.78rem; font-weight:700; letter-spacing:.14em; text-transform:uppercase; margin-bottom:.7rem; }
+    .hero-copy { max-width:620px; font-size:1.05rem; margin:1rem 0 0; }
+    .panel { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:1.2rem; margin-top:1rem; } .upload { border:2px dashed #9cc6c0; text-align:center; padding:2rem; }
+    input[type=file] { width:100%; padding:1rem; } input, textarea, select { border:1px solid var(--line); border-radius:8px; padding:.7rem; font:inherit; width:100%; background:#fff; color:var(--ink); }
+    label { display:block; color:var(--muted); font-weight:700; margin:.8rem 0 .35rem; } textarea { min-height:100px; resize:vertical; }
+    button, .button { border:0; border-radius:9px; background:var(--teal); color:#fff; font-weight:700; padding:.7rem 1rem; cursor:pointer; text-decoration:none; display:inline-block; margin-top:1rem; } button:hover, .button:hover { background:var(--dark); }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:1rem; } .preview img { width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:10px; } .preview figcaption { color:var(--muted); overflow-wrap:anywhere; margin-top:.4rem; }
+    .fields { display:grid; grid-template-columns:repeat(2,1fr); gap:0 1rem; } .wide { grid-column:1/-1; } .notice { padding:.9rem 1rem; border-radius:9px; background:#e4f1ed; color:var(--dark); } .error { background:#f9dfd3; color:#8e3928; }
+    table { width:100%; border-collapse:collapse; } th,td { text-align:left; border-bottom:1px solid var(--line); padding:.6rem; vertical-align:top; overflow-wrap:anywhere; } pre { white-space:pre-wrap; overflow:auto; background:#f6f3ed; padding:1rem; border-radius:8px; }
+    @media (max-width:600px) { main { padding:1.5rem 1rem 3rem; } .hero { padding:1.6rem; } .fields { grid-template-columns:1fr; } .wide { grid-column:auto; } }
+  </style>
+</head>
+<body><main>
+  <section class="hero"><div class="eyebrow">Bildarchiv · Metadaten-Werkzeug</div><h1>XMP sichtbar machen.<br>Sauber weitergeben.</h1><p class="hero-copy">Bilder prüfen, Metadaten ergänzen und fertige Dateien im Originalformat herunterladen.</p></section>
+  <form class="panel upload" method="post" enctype="multipart/form-data">{% csrf_token %}<label for="images">Bilder hier ablegen oder auswählen</label><input id="images" type="file" name="images" accept=".jpg,.jpeg,.png,.tif,.tiff,.webp,.heic,.avif" multiple><button type="submit">Bilder laden</button><p>Unterstützte Formate: JPG, PNG, TIFF, WebP, HEIC und AVIF.</p></form>
+  {% if error %}<div class="panel notice error">{{ error }}</div>{% endif %}
+  {% if files %}
+    <p><strong>{{ files|length }} Bild(er) ausgewählt</strong> · bereit zur Bearbeitung</p>
+    <section class="grid">{% for file in files %}<figure class="panel preview"><img src="{{ file.preview }}" alt="Vorschau von {{ file.name }}"><figcaption>{{ file.name }}</figcaption></figure>{% endfor %}</section>
+    <h2>Metadaten hinzufügen</h2>
+    <section class="panel"><h3>Auf alle Bilder anwenden</h3><p>Die gleichen Angaben werden in jedes ausgewählte Bild geschrieben.</p><form method="post">{% csrf_token %}<input type="hidden" name="action" value="batch"><div class="fields"><div><label for="batch-title">Titel</label><input id="batch-title" name="title"></div><div><label for="batch-creator">Urheber / Autor</label><input id="batch-creator" name="creator"></div><div class="wide"><label for="batch-description">Beschreibung</label><textarea id="batch-description" name="description"></textarea></div><div><label for="batch-rights">Copyright / Rechte</label><input id="batch-rights" name="rights"></div><div><label for="batch-keywords">Schlagwörter</label><input id="batch-keywords" name="keywords" placeholder="Mit Komma trennen"></div></div><button type="submit">Metadaten auf alle Bilder anwenden</button></form></section>
+    <section class="panel"><h3>Nur ein Bild manuell bearbeiten</h3><form method="get"><label for="selected">Bild auswählen</label><select id="selected" name="selected" onchange="this.form.submit()">{% for file in files %}<option value="{{ file.name }}" {% if file.name == selected_name %}selected{% endif %}>{{ file.name }}</option>{% endfor %}</select></form>
+      {% if xmp_metadata %}<h3>XMP-Metadaten</h3><table><tbody>{% for key,value in xmp_metadata.items %}<tr><th>{{ key }}</th><td>{{ value }}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="notice">Diese Bilddatei enthält keine erkannten XMP-Metadaten.</p>{% endif %}
+      <details><summary>Alle gefundenen Metadaten anzeigen</summary><pre>{{ metadata|pprint }}</pre></details>
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="json"><input type="hidden" name="selected" value="{{ selected_name }}"><button type="submit">Metadaten als JSON herunterladen</button></form>
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="single"><input type="hidden" name="selected" value="{{ selected_name }}"><div class="fields"><div><label for="title">Titel</label><input id="title" name="title" value="{{ metadata_fields.title }}"></div><div><label for="creator">Urheber / Autor</label><input id="creator" name="creator" value="{{ metadata_fields.creator }}"></div><div class="wide"><label for="description">Beschreibung</label><textarea id="description" name="description">{{ metadata_fields.description }}</textarea></div><div><label for="rights">Copyright / Rechte</label><input id="rights" name="rights" value="{{ metadata_fields.rights }}"></div><div><label for="keywords">Schlagwörter</label><input id="keywords" name="keywords" placeholder="Mit Komma trennen"></div></div><button type="submit">Nur dieses Bild bearbeiten</button></form>
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="remove"><input type="hidden" name="selected" value="{{ selected_name }}"><p>Erstellt eine neue Kopie ohne EXIF-, XMP- und weitere eingebettete Metadaten.</p><button type="submit">Alle Metadaten entfernen</button></form>
+    </section>
+  {% endif %}
+</main></body></html>
