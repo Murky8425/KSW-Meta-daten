@@ -1,0 +1,109 @@
+import base64
+import json
+import mimetypes
+import shutil
+import tempfile
+from pathlib import Path
+
+from django.http import HttpResponse
+from django.shortcuts import redirect, render
+
+from .services import create_zip, read_xmp_metadata, remove_metadata, write_xmp_metadata
+
+
+ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp", ".heic", ".avif"}
+
+
+def _upload_dir(request):
+    directory = request.session.get("upload_dir")
+    if not directory:
+        return None
+    path = Path(directory)
+    return path if path.is_dir() and path.parent == Path(tempfile.gettempdir()) else None
+
+
+def _fields(data):
+    return {
+        "XMP-dc:Title": data.get("title", "").strip(),
+        "XMP-dc:Description": data.get("description", "").strip(),
+        "XMP-dc:Creator": data.get("creator", "").strip(),
+        "XMP-dc:Rights": data.get("rights", "").strip(),
+        "XMP-dc:Subject": [item.strip() for item in data.get("keywords", "").split(",") if item.strip()],
+    }
+
+
+def _file_context(directory):
+    if directory is None:
+        return []
+    files = []
+    for path in sorted(directory.iterdir()):
+        if path.is_file():
+            mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+            preview = f"data:{mime};base64,{base64.b64encode(path.read_bytes()).decode()}"
+            files.append({"name": path.name, "path": path, "mime": mime, "preview": preview})
+    return files
+
+
+def index(request):
+    directory = _upload_dir(request)
+    error = None
+    selected_name = request.GET.get("selected") or request.POST.get("selected")
+    metadata = {}
+
+    if request.method == "POST" and request.FILES.getlist("images"):
+        if directory:
+            shutil.rmtree(directory)
+        directory = Path(tempfile.mkdtemp(prefix="ksw-meta-"))
+        for uploaded in request.FILES.getlist("images"):
+            safe_name = Path(uploaded.name).name
+            if Path(safe_name).suffix.lower() in ALLOWED_EXTENSIONS:
+                (directory / safe_name).write_bytes(uploaded.read())
+        request.session["upload_dir"] = str(directory)
+        return redirect("index")
+
+    files = _file_context(directory)
+    names = {file["name"] for file in files}
+    if selected_name not in names:
+        selected_name = files[0]["name"] if files else None
+    selected_file = next((file for file in files if file["name"] == selected_name), None)
+
+    if request.method == "POST" and selected_file:
+        try:
+            action = request.POST.get("action")
+            if action == "batch":
+                updated = [(f"{Path(file['name']).stem}-mit-xmp{Path(file['name']).suffix}", write_xmp_metadata(file["path"], _fields(request.POST))) for file in files]
+                response = HttpResponse(create_zip(updated), content_type="application/zip")
+                response["Content-Disposition"] = 'attachment; filename="bilder-mit-xmp.zip"'
+                return response
+            if action == "single":
+                return _download(write_xmp_metadata(selected_file["path"], _fields(request.POST)), f"{Path(selected_name).stem}-mit-xmp{Path(selected_name).suffix}", selected_file["mime"])
+            if action == "remove":
+                return _download(remove_metadata(selected_file["path"]), f"{Path(selected_name).stem}-ohne-metadaten{Path(selected_name).suffix}", selected_file["mime"])
+            if action == "json":
+                metadata = read_xmp_metadata(selected_file["path"])
+                return _download(json.dumps(metadata, ensure_ascii=False, indent=2).encode(), f"{Path(selected_name).stem}-metadaten.json", "application/json")
+        except (RuntimeError, ValueError, json.JSONDecodeError) as exc:
+            error = str(exc)
+
+    if selected_file and not metadata:
+        try:
+            metadata = read_xmp_metadata(selected_file["path"])
+        except (RuntimeError, ValueError, json.JSONDecodeError) as exc:
+            error = str(exc)
+    return render(request, "metadata_tool/index.html", {
+        "files": files, "selected_name": selected_name, "metadata": metadata,
+        "xmp_metadata": {key: value for key, value in metadata.items() if key.startswith("XMP")},
+        "metadata_fields": {
+            "title": metadata.get("XMP-dc:Title", ""),
+            "description": metadata.get("XMP-dc:Description", ""),
+            "creator": metadata.get("XMP-dc:Creator", ""),
+            "rights": metadata.get("XMP-dc:Rights", ""),
+        },
+        "error": error,
+    })
+
+
+def _download(data, filename, content_type):
+    response = HttpResponse(data, content_type=content_type)
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
