@@ -30,7 +30,7 @@
   <form class="panel upload" method="post" enctype="multipart/form-data">{% csrf_token %}<label for="images">Bilder hier ablegen oder auswählen</label><input id="images" type="file" name="images" accept=".jpg,.jpeg,.png,.tif,.tiff,.webp,.heic,.avif" multiple><button type="submit">Bilder laden</button><p>Unterstützte Formate: JPG, PNG, TIFF, WebP, HEIC und AVIF.</p></form>
   {% if error %}<div class="panel notice error">{{ error }}</div>{% endif %}
   {% if files %}
-    <p><strong>{{ files|length }} Bild(er) ausgewählt</strong> · bereit zur Bearbeitung</p>
+    <p><strong>{{ files|length }} Bild(er) ausgewählt</strong></p>
     <section class="grid">{% for file in files %}<figure class="panel preview"><img src="{{ file.preview }}" alt="Vorschau von {{ file.name }}"><figcaption>{{ file.name }}</figcaption></figure>{% endfor %}</section>
     <h2>Metadaten hinzufügen</h2>
     <section class="panel"><h3>Auf alle Bilder anwenden</h3><p>Die gleichen Angaben werden in jedes ausgewählte Bild geschrieben.</p><form method="post">{% csrf_token %}<input type="hidden" name="action" value="batch"><div class="fields"><div><label for="batch-title">Titel</label><input id="batch-title" name="title"></div><div><label for="batch-creator">Urheber / Autor</label><input id="batch-creator" name="creator"></div><div class="wide"><label for="batch-description">Beschreibung</label><textarea id="batch-description" name="description"></textarea></div><div><label for="batch-rights">Copyright / Rechte</label><input id="batch-rights" name="rights"></div><div><label for="batch-keywords">Schlagwörter</label><input id="batch-keywords" name="keywords" placeholder="Mit Komma trennen"></div></div><button type="submit">Metadaten auf alle Bilder anwenden</button></form></section>
