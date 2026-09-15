@@ -1,6 +1,6 @@
 # KSW-Meta-daten
 
-Streamlit-App zum Auslesen von XMP-Metadaten aus Bilddateien.
+Django-Anwendung zum Auslesen und Bearbeiten von XMP-Metadaten in Bilddateien.
 
 ## Installation
 
@@ -38,22 +38,21 @@ Unter Windows lautet der Aktivierungsbefehl:
 .venv\Scripts\activate
 ```
 
-### 3. App starten
+### 3. Django-Anwendung starten
 
 ```bash
-streamlit run app.py
+python manage.py runserver
 ```
 
-Danach die angezeigte lokale URL im Browser öffnen. Das Feld **Bilder hier ablegen
-oder auswählen** ist automatisch eine Drag-and-drop-Fläche und akzeptiert mehrere
-Bilder gleichzeitig.
+Danach <http://127.0.0.1:8000/> im Browser öffnen. Das Upload-Feld akzeptiert
+mehrere Bilder gleichzeitig.
 
-Unter **Metadaten hinzufügen** stehen zwei Modi zur Verfügung:
+Unter **Metadaten hinzufügen** stehen zwei Bereiche zur Verfügung:
 
 - **Auf alle Bilder anwenden:** Die gleichen Angaben werden auf alle Bilder
-	geschrieben. Die bearbeiteten Dateien werden gemeinsam als ZIP heruntergeladen.
+  geschrieben. Die bearbeiteten Dateien werden gemeinsam als ZIP heruntergeladen.
 - **Nur ein Bild manuell bearbeiten:** Ein Bild auswählen, vorhandene XMP-Daten
-	prüfen oder ändern und dieses Bild einzeln herunterladen.
+  prüfen oder ändern und dieses Bild einzeln herunterladen.
 
 Titel, Beschreibung, Urheber, Copyright und Schlagwörter können ergänzt oder
 geändert werden. Das hochgeladene Original bleibt unverändert. Im manuellen Modus
@@ -68,4 +67,3 @@ ausgewählten Bild entfernt werden.
 - Die App zeigt zusätzlich alle von ExifTool gefundenen Metadaten im aufklappbaren
 	Bereich an, nicht nur XMP.
 
-# http://172.17.200.124:8501/
