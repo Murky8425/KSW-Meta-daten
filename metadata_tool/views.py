@@ -12,7 +12,7 @@ from django.shortcuts import redirect, render
 from PIL import Image
 
 from .models import ExtractedMetadata
-from .services import create_zip, read_xmp_metadata, remove_metadata, resize_image, write_xmp_metadata
+from .services import convert_image, create_zip, read_xmp_metadata, remove_metadata, resize_image, write_xmp_metadata
 
 
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp", ".heic", ".avif"}
@@ -124,6 +124,10 @@ def index(request):
                     f"{Path(selected_name).stem}-{scale}prozent{Path(selected_name).suffix}",
                     selected_file["mime"],
                 )
+            if action == "convert":
+                target_format = request.POST.get("target_format", "png")
+                data, suffix, content_type = convert_image(selected_file["path"], target_format)
+                return _download(data, f"{Path(selected_name).stem}-konvertiert.{suffix}", content_type)
             if action == "json":
                 metadata = read_xmp_metadata(selected_file["path"])
                 _save_metadata(selected_file["path"], selected_name, metadata)

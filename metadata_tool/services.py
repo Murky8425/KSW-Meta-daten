@@ -78,6 +78,25 @@ def resize_image(file_path, scale):
     return output.getvalue()
 
 
+def convert_image(file_path, target_format):
+    formats = {
+        "png": ("PNG", "png"),
+        "jpg": ("JPEG", "jpg"),
+        "webp": ("WEBP", "webp"),
+    }
+    image_format, suffix = formats.get(str(target_format).lower(), (None, None))
+    if image_format is None:
+        raise ValueError("Dieses Zielformat wird nicht unterstützt.")
+
+    with Image.open(file_path) as image:
+        if image_format == "JPEG" and image.mode not in {"RGB", "L"}:
+            image = image.convert("RGB")
+        output = io.BytesIO()
+        save_options = {"quality": 92} if image_format in {"JPEG", "WEBP"} else {}
+        image.save(output, format=image_format, **save_options)
+    return output.getvalue(), suffix, f"image/{'jpeg' if image_format == 'JPEG' else suffix}"
+
+
 def create_zip(files):
     archive = io.BytesIO()
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zip_file:
