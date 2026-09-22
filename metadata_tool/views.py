@@ -5,6 +5,7 @@ import json
 import mimetypes
 import shutil
 import tempfile
+from urllib.parse import quote
 from pathlib import Path
 
 from django.http import HttpResponse
@@ -50,7 +51,7 @@ def _file_context(directory):
         return []
     files = []
     for path in sorted(directory.iterdir()):
-        if path.is_file():
+        if path.is_file() and not path.name.startswith(".converted-"):
             mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
             try:
                 preview = _preview_data(path, mime)
@@ -58,6 +59,21 @@ def _file_context(directory):
                 preview = ""
             files.append({"name": path.name, "path": path, "mime": mime, "preview": preview})
     return files
+
+
+def _converted_context(request, directory):
+    if directory is None:
+        return None
+    converted_path = Path(request.session.get("converted_path", ""))
+    if not converted_path.is_file() or converted_path.parent != directory or not converted_path.name.startswith(".converted-"):
+        return None
+    return {
+        "path": converted_path,
+        "name": request.session.get("converted_name", converted_path.name.removeprefix(".converted-")),
+        "mime": request.session.get("converted_mime", "application/octet-stream"),
+        "show": request.session.get("show_converted", False),
+        "preview": _preview_data(converted_path, request.session.get("converted_mime", "application/octet-stream")),
+    }
 
 
 def _save_metadata(file_path, filename, metadata):
@@ -100,6 +116,7 @@ def index(request):
         return redirect("index")
 
     files = _file_context(directory)
+    converted = _converted_context(request, directory)
     names = {file["name"] for file in files}
     if selected_name not in names:
         selected_name = files[0]["name"] if files else None
@@ -127,7 +144,21 @@ def index(request):
             if action == "convert":
                 target_format = request.POST.get("target_format", "png")
                 data, suffix, content_type = convert_image(selected_file["path"], target_format)
-                return _download(data, f"{Path(selected_name).stem}-konvertiert.{suffix}", content_type)
+                converted_name = f"{Path(selected_name).stem}-konvertiert.{suffix}"
+                converted_path = directory / f".converted-{converted_name}"
+                converted_path.write_bytes(data)
+                request.session["converted_path"] = str(converted_path)
+                request.session["converted_name"] = converted_name
+                request.session["converted_mime"] = content_type
+                request.session["show_converted"] = False
+                return redirect(f"/?selected={quote(selected_name)}")
+            if action == "preview-converted":
+                request.session["show_converted"] = True
+                return redirect(f"/?selected={quote(selected_name)}")
+            if action == "download-converted":
+                if converted:
+                    return _download(converted["path"].read_bytes(), converted["name"], converted["mime"])
+                error = "Es gibt keine fertige konvertierte Datei zum Herunterladen."
             if action == "json":
                 metadata = read_xmp_metadata(selected_file["path"])
                 _save_metadata(selected_file["path"], selected_name, metadata)
@@ -143,6 +174,7 @@ def index(request):
             error = str(exc)
     return render(request, "metadata_tool/index.html", {
         "files": files, "selected_name": selected_name, "metadata": metadata,
+        "converted": converted,
         "xmp_metadata": {key: value for key, value in metadata.items() if key.startswith("XMP")},
         "metadata_fields": {
             "title": metadata.get("XMP-dc:Title", ""),
