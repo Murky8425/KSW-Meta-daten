@@ -142,6 +142,32 @@ def index(request):
                 response = HttpResponse(create_zip(updated), content_type="application/zip")
                 response["Content-Disposition"] = 'attachment; filename="bilder-mit-xmp.zip"'
                 return response
+            if action == "batch-resize":
+                scale = request.POST.get("scale", "100")
+                resized = [
+                    (f"{Path(file['name']).stem}-{scale}prozent{Path(file['name']).suffix}", resize_image(file["path"], scale))
+                    for file in files
+                ]
+                response = HttpResponse(create_zip(resized), content_type="application/zip")
+                response["Content-Disposition"] = 'attachment; filename="bilder-skaliert.zip"'
+                return response
+            if action == "batch-convert":
+                target_format = request.POST.get("target_format", "png")
+                converted_files = []
+                for file in files:
+                    data, suffix, _ = convert_image(file["path"], target_format)
+                    converted_files.append((f"{Path(file['name']).stem}-konvertiert.{suffix}", data))
+                response = HttpResponse(create_zip(converted_files), content_type="application/zip")
+                response["Content-Disposition"] = 'attachment; filename="bilder-konvertiert.zip"'
+                return response
+            if action == "batch-remove":
+                cleaned = [
+                    (f"{Path(file['name']).stem}-ohne-metadaten{Path(file['name']).suffix}", remove_metadata(file["path"]))
+                    for file in files
+                ]
+                response = HttpResponse(create_zip(cleaned), content_type="application/zip")
+                response["Content-Disposition"] = 'attachment; filename="bilder-ohne-metadaten.zip"'
+                return response
             if action == "single":
                 return _download(write_xmp_metadata(selected_file["path"], _fields(request.POST)), f"{Path(selected_name).stem}-mit-xmp{Path(selected_name).suffix}", selected_file["mime"])
             if action == "remove":
