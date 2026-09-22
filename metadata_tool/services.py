@@ -8,6 +8,18 @@ from pathlib import Path
 
 from PIL import Image
 
+try:
+    from pillow_heif import register_heif_opener
+
+    register_heif_opener()
+except ImportError:
+    pass
+
+try:
+    import pillow_avif  # noqa: F401
+except ImportError:
+    pass
+
 
 def _exiftool():
     command = shutil.which("exiftool")
@@ -62,7 +74,10 @@ def resize_image(file_path, scale):
         raise ValueError("Die Bildgröße muss zwischen 10 und 200 Prozent liegen.")
 
     suffix = Path(file_path).suffix.lower()
-    format_by_suffix = {".jpg": "JPEG", ".jpeg": "JPEG", ".png": "PNG", ".tif": "TIFF", ".tiff": "TIFF", ".webp": "WEBP"}
+    format_by_suffix = {
+        ".jpg": "JPEG", ".jpeg": "JPEG", ".png": "PNG", ".tif": "TIFF",
+        ".tiff": "TIFF", ".webp": "WEBP", ".heic": "HEIF", ".avif": "AVIF",
+    }
     image_format = format_by_suffix.get(suffix)
     if image_format is None:
         raise ValueError("Dieses Bildformat kann nicht direkt verkleinert werden.")
@@ -73,7 +88,7 @@ def resize_image(file_path, scale):
         resized = image.resize((width, height), Image.Resampling.LANCZOS)
         output = io.BytesIO()
         save_image = resized.convert("RGB") if image_format == "JPEG" and resized.mode not in {"RGB", "L"} else resized
-        save_options = {"quality": 92} if image_format in {"JPEG", "WEBP"} else {}
+        save_options = {"quality": 92} if image_format in {"JPEG", "WEBP", "HEIF", "AVIF"} else {}
         save_image.save(output, format=image_format, **save_options)
     return output.getvalue()
 
@@ -83,6 +98,9 @@ def convert_image(file_path, target_format):
         "png": ("PNG", "png"),
         "jpg": ("JPEG", "jpg"),
         "webp": ("WEBP", "webp"),
+        "tiff": ("TIFF", "tiff"),
+        "heic": ("HEIF", "heic"),
+        "avif": ("AVIF", "avif"),
     }
     image_format, suffix = formats.get(str(target_format).lower(), (None, None))
     if image_format is None:
@@ -92,9 +110,13 @@ def convert_image(file_path, target_format):
         if image_format == "JPEG" and image.mode not in {"RGB", "L"}:
             image = image.convert("RGB")
         output = io.BytesIO()
-        save_options = {"quality": 92} if image_format in {"JPEG", "WEBP"} else {}
+        save_options = {"quality": 92} if image_format in {"JPEG", "WEBP", "HEIF", "AVIF"} else {}
         image.save(output, format=image_format, **save_options)
-    return output.getvalue(), suffix, f"image/{'jpeg' if image_format == 'JPEG' else suffix}"
+    content_types = {
+        "JPEG": "image/jpeg", "PNG": "image/png", "WEBP": "image/webp",
+        "TIFF": "image/tiff", "HEIF": "image/heic", "AVIF": "image/avif",
+    }
+    return output.getvalue(), suffix, content_types[image_format]
 
 
 def create_zip(files):
