@@ -57,9 +57,9 @@ def resize_image(file_path, scale):
     try:
         scale = int(scale)
     except (TypeError, ValueError) as exc:
-        raise ValueError("Die Bildgröße muss zwischen 10 und 100 Prozent liegen.") from exc
-    if not 10 <= scale <= 100:
-        raise ValueError("Die Bildgröße muss zwischen 10 und 100 Prozent liegen.")
+        raise ValueError("Die Bildgröße muss zwischen 10 und 200 Prozent liegen.") from exc
+    if not 10 <= scale <= 200:
+        raise ValueError("Die Bildgröße muss zwischen 10 und 200 Prozent liegen.")
 
     suffix = Path(file_path).suffix.lower()
     format_by_suffix = {".jpg": "JPEG", ".jpeg": "JPEG", ".png": "PNG", ".tif": "TIFF", ".tiff": "TIFF", ".webp": "WEBP"}
