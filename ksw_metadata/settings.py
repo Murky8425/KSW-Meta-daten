@@ -11,11 +11,19 @@ SECRET_KEY = "django-insecure-ksw-metadata-development-key"
 # Während der Entwicklung ausführliche Fehlermeldungen anzeigen.
 DEBUG = True
 
-# Erlaubte Hostnamen für lokale Zugriffe.
-ALLOWED_HOSTS = ["localhost", "127.0.0.1", "testserver"]
+# Erlaubte Hostnamen für lokale Zugriffe und den Ubuntu-Server.
+allowed_hosts = os.environ.get(
+    "DJANGO_ALLOWED_HOSTS",
+    "localhost,127.0.0.1,testserver,172.17.200.124",
+)
+ALLOWED_HOSTS = [host.strip() for host in allowed_hosts.split(",") if host.strip()]
 
 # Vertrauenswürdige Origins für CSRF-geschützte POST-Anfragen.
-CSRF_TRUSTED_ORIGINS = ["http://localhost:8000", "https://localhost:8000"]
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:8000",
+    "https://localhost:8000",
+    "http://172.17.200.124:8000",
+]
 
 # Aktivierte Django-Anwendungen.
 INSTALLED_APPS = ["metadata_tool"]
