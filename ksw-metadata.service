@@ -1,0 +1,17 @@
+[Unit]
+Description=KSW Metadaten Django-Anwendung
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rh-admin
+Group=rh-admin
+WorkingDirectory=/home/rh-admin/KSW-Meta-daten
+ExecStart=/usr/local/bin/ksw-metadata
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
