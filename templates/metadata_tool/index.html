@@ -46,3 +46,18 @@
     </section>
   {% endif %}
 </main></body></html>
+{% if files %}
+<script>
+  const navigation = performance.getEntriesByType('navigation')[0];
+  const isReload = navigation && navigation.type === 'reload';
+  if (isReload) {
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    fetch(window.location.href, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {'X-CSRFToken': csrfToken, 'Content-Type': 'application/x-www-form-urlencoded'},
+      body: 'action=clear'
+    }).then(() => window.location.replace('/'));
+  }
+</script>
+{% endif %}

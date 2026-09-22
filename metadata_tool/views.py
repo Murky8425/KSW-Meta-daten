@@ -76,6 +76,14 @@ def _converted_context(request, directory):
     }
 
 
+def _clear_uploads(request):
+    directory = _upload_dir(request)
+    if directory:
+        shutil.rmtree(directory, ignore_errors=True)
+    for key in ("upload_dir", "converted_path", "converted_name", "converted_mime", "show_converted"):
+        request.session.pop(key, None)
+
+
 def _save_metadata(file_path, filename, metadata):
     fields = {
         "title": metadata.get("XMP-dc:Title", ""),
@@ -99,6 +107,10 @@ def _save_metadata(file_path, filename, metadata):
 
 
 def index(request):
+    if request.method == "POST" and request.POST.get("action") == "clear":
+        _clear_uploads(request)
+        return redirect("index")
+
     directory = _upload_dir(request)
     error = None
     selected_name = request.GET.get("selected") or request.POST.get("selected")
