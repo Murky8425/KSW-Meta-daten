@@ -6,6 +6,8 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+from PIL import Image
+
 
 def _exiftool():
     command = shutil.which("exiftool")
@@ -49,6 +51,31 @@ def remove_metadata(file_path):
         if result.returncode != 0:
             raise ValueError(result.stderr.strip() or "ExifTool konnte die Metadaten nicht entfernen.")
         return output.read_bytes()
+
+
+def resize_image(file_path, scale):
+    try:
+        scale = int(scale)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Die Bildgröße muss zwischen 10 und 100 Prozent liegen.") from exc
+    if not 10 <= scale <= 100:
+        raise ValueError("Die Bildgröße muss zwischen 10 und 100 Prozent liegen.")
+
+    suffix = Path(file_path).suffix.lower()
+    format_by_suffix = {".jpg": "JPEG", ".jpeg": "JPEG", ".png": "PNG", ".tif": "TIFF", ".tiff": "TIFF", ".webp": "WEBP"}
+    image_format = format_by_suffix.get(suffix)
+    if image_format is None:
+        raise ValueError("Dieses Bildformat kann nicht direkt verkleinert werden.")
+
+    with Image.open(file_path) as image:
+        width = max(1, round(image.width * scale / 100))
+        height = max(1, round(image.height * scale / 100))
+        resized = image.resize((width, height), Image.Resampling.LANCZOS)
+        output = io.BytesIO()
+        save_image = resized.convert("RGB") if image_format == "JPEG" and resized.mode not in {"RGB", "L"} else resized
+        save_options = {"quality": 92} if image_format in {"JPEG", "WEBP"} else {}
+        save_image.save(output, format=image_format, **save_options)
+    return output.getvalue()
 
 
 def create_zip(files):

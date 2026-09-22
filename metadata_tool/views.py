@@ -12,7 +12,7 @@ from django.shortcuts import redirect, render
 from PIL import Image
 
 from .models import ExtractedMetadata
-from .services import create_zip, read_xmp_metadata, remove_metadata, write_xmp_metadata
+from .services import create_zip, read_xmp_metadata, remove_metadata, resize_image, write_xmp_metadata
 
 
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp", ".heic", ".avif"}
@@ -117,6 +117,13 @@ def index(request):
                 return _download(write_xmp_metadata(selected_file["path"], _fields(request.POST)), f"{Path(selected_name).stem}-mit-xmp{Path(selected_name).suffix}", selected_file["mime"])
             if action == "remove":
                 return _download(remove_metadata(selected_file["path"]), f"{Path(selected_name).stem}-ohne-metadaten{Path(selected_name).suffix}", selected_file["mime"])
+            if action == "resize":
+                scale = request.POST.get("scale", "100")
+                return _download(
+                    resize_image(selected_file["path"], scale),
+                    f"{Path(selected_name).stem}-{scale}prozent{Path(selected_name).suffix}",
+                    selected_file["mime"],
+                )
             if action == "json":
                 metadata = read_xmp_metadata(selected_file["path"])
                 _save_metadata(selected_file["path"], selected_name, metadata)
