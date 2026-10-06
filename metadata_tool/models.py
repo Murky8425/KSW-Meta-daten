@@ -8,6 +8,7 @@ class StoredImage(models.Model):
     storage_name = models.CharField(max_length=255, unique=True)
     image_data = models.BinaryField()
     uploaded_at = models.DateTimeField(auto_now_add=True)
+    last_scale = models.PositiveSmallIntegerField(default=100)
 
     class Meta:
         ordering = ["-uploaded_at"]

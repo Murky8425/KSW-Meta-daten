@@ -111,6 +111,42 @@ def _save_preferred_scale(request, scale):
     preference.save(update_fields=["preferred_scale"])
 
 
+def _delete_selected_image(request, storage_name):
+    stored_image = StoredImage.objects.filter(owner=request.user, storage_name=storage_name).first()
+    if stored_image:
+        directory = _upload_dir(request)
+        file_path = directory / stored_image.storage_name
+        if file_path.exists():
+            file_path.unlink(missing_ok=True)
+        stored_image.delete()
+    _clear_uploads(request)
+
+
+def _persist_image(request, file, image_data, scale=None):
+    stored_image = StoredImage.objects.get(owner=request.user, storage_name=file["key"])
+    stored_image.image_data = image_data
+    if scale is not None:
+        stored_image.last_scale = int(scale)
+    stored_image.save(update_fields=["image_data", "last_scale"])
+    file["path"].write_bytes(image_data)
+
+
+def _archive_derived_image(request, filename, image_data, scale=None):
+    safe_name = Path(filename).name
+    storage_name = f"{uuid.uuid4().hex}{Path(safe_name).suffix.lower()}"
+    stored_image = StoredImage.objects.create(
+        owner=request.user,
+        original_filename=safe_name,
+        storage_name=storage_name,
+        image_data=image_data,
+    )
+    if scale is not None:
+        stored_image.last_scale = int(scale)
+        stored_image.save(update_fields=["last_scale"])
+    directory = _upload_dir(request)
+    (directory / storage_name).write_bytes(image_data)
+
+
 def register(request):
     if request.user.is_authenticated:
         return redirect("index")
@@ -144,6 +180,18 @@ def archive(request):
     })
 
 
+@login_required
+def delete_archive_image(request, image_id):
+    image = get_object_or_404(StoredImage, id=image_id, owner=request.user)
+    directory = _upload_dir(request)
+    file_path = directory / image.storage_name
+    if file_path.exists():
+        file_path.unlink(missing_ok=True)
+    image.delete()
+    _clear_uploads(request)
+    return redirect("archive")
+
+
 def _save_metadata(file_path, filename, metadata):
     fields = {
         "title": metadata.get("XMP-dc:Title", ""),
@@ -172,9 +220,21 @@ def index(request):
         _clear_uploads(request)
         return redirect("index")
 
-    directory = _upload_dir(request)
+    selected_name = request.GET.get("selected") or request.GET.get("load") or request.POST.get("selected")
+    archived_image = None
+    if request.method == "GET" and request.GET.get("load"):
+        archived_image = StoredImage.objects.filter(
+            owner=request.user,
+            storage_name=request.GET["load"],
+        ).first()
+    if archived_image:
+        _clear_uploads(request)
+        directory = Path(tempfile.mkdtemp(prefix="ksw-meta-"))
+        (directory / archived_image.storage_name).write_bytes(bytes(archived_image.image_data))
+        request.session["upload_dir"] = str(directory)
+    else:
+        directory = _upload_dir(request)
     error = None
-    selected_name = request.GET.get("selected") or request.POST.get("selected")
     metadata = {}
 
     if request.method == "POST" and request.FILES.getlist("images"):
@@ -204,12 +264,21 @@ def index(request):
         selected_name = files[0]["key"] if files else None
     selected_file = next((file for file in files if file["key"] == selected_name), None)
     preference, _ = UserPreference.objects.get_or_create(owner=request.user)
+    current_scale = preference.preferred_scale
+    if selected_file:
+        stored = StoredImage.objects.filter(owner=request.user, storage_name=selected_file["key"]).first()
+        if stored is not None:
+            current_scale = stored.last_scale
 
     if request.method == "POST" and selected_file:
         try:
             action = request.POST.get("action")
             if action == "batch":
-                updated = [(f"{Path(file['name']).stem}-mit-xmp{Path(file['name']).suffix}", write_xmp_metadata(file["path"], _fields(request.POST))) for file in files]
+                updated = []
+                for file in files:
+                    image_data = write_xmp_metadata(file["path"], _fields(request.POST))
+                    _persist_image(request, file, image_data)
+                    updated.append((f"{Path(file['name']).stem}-mit-xmp{Path(file['name']).suffix}", image_data))
                 response = HttpResponse(create_zip(updated), content_type="application/zip")
                 response["Content-Disposition"] = 'attachment; filename="bilder-mit-xmp.zip"'
                 return response
@@ -219,6 +288,8 @@ def index(request):
                     (f"{Path(file['name']).stem}-{scale}prozent{Path(file['name']).suffix}", resize_image(file["path"], scale))
                     for file in files
                 ]
+                for filename, image_data in resized:
+                    _archive_derived_image(request, filename, image_data, scale=scale)
                 _save_preferred_scale(request, scale)
                 response = HttpResponse(create_zip(resized), content_type="application/zip")
                 response["Content-Disposition"] = 'attachment; filename="bilder-skaliert.zip"'
@@ -228,7 +299,9 @@ def index(request):
                 converted_files = []
                 for file in files:
                     data, suffix, _ = convert_image(file["path"], target_format)
-                    converted_files.append((f"{Path(file['name']).stem}-konvertiert.{suffix}", data))
+                    filename = f"{Path(file['name']).stem}-konvertiert.{suffix}"
+                    converted_files.append((filename, data))
+                    _archive_derived_image(request, filename, data)
                 response = HttpResponse(create_zip(converted_files), content_type="application/zip")
                 response["Content-Disposition"] = 'attachment; filename="bilder-konvertiert.zip"'
                 return response
@@ -237,18 +310,29 @@ def index(request):
                     (f"{Path(file['name']).stem}-ohne-metadaten{Path(file['name']).suffix}", remove_metadata(file["path"]))
                     for file in files
                 ]
+                for file, (_, image_data) in zip(files, cleaned):
+                    _persist_image(request, file, image_data)
                 response = HttpResponse(create_zip(cleaned), content_type="application/zip")
                 response["Content-Disposition"] = 'attachment; filename="bilder-ohne-metadaten.zip"'
                 return response
             if action == "single":
-                return _download(write_xmp_metadata(selected_file["path"], _fields(request.POST)), f"{Path(selected_name).stem}-mit-xmp{Path(selected_name).suffix}", selected_file["mime"])
+                image_data = write_xmp_metadata(selected_file["path"], _fields(request.POST))
+                _persist_image(request, selected_file, image_data)
+                return _download(image_data, f"{Path(selected_name).stem}-mit-xmp{Path(selected_name).suffix}", selected_file["mime"])
+            if action == "delete-selected":
+                _delete_selected_image(request, selected_name)
+                return redirect("index")
             if action == "remove":
-                return _download(remove_metadata(selected_file["path"]), f"{Path(selected_name).stem}-ohne-metadaten{Path(selected_name).suffix}", selected_file["mime"])
+                image_data = remove_metadata(selected_file["path"])
+                _persist_image(request, selected_file, image_data)
+                return _download(image_data, f"{Path(selected_name).stem}-ohne-metadaten{Path(selected_name).suffix}", selected_file["mime"])
             if action == "resize":
                 scale = request.POST.get("scale", "100")
                 resized = resize_image(selected_file["path"], scale)
+                resized_name = f"{Path(selected_file['name']).stem}-{scale}prozent{Path(selected_file['name']).suffix}"
+                _archive_derived_image(request, resized_name, resized, scale=scale)
                 _save_preferred_scale(request, scale)
-                return _download(resized, f"{Path(selected_file['name']).stem}-{scale}prozent{Path(selected_file['name']).suffix}", selected_file["mime"])
+                return _download(resized, resized_name, selected_file["mime"])
             if action == "convert":
                 target_format = request.POST.get("target_format", "png")
                 data, suffix, content_type = convert_image(selected_file["path"], target_format)
@@ -265,7 +349,11 @@ def index(request):
                 return redirect(f"/?selected={quote(selected_name)}")
             if action == "download-converted":
                 if converted:
-                    return _download(converted["path"].read_bytes(), converted["name"], converted["mime"])
+                    image_data = converted["path"].read_bytes()
+                    _archive_derived_image(request, converted["name"], image_data)
+                    for key in ("converted_path", "converted_name", "converted_mime", "show_converted"):
+                        request.session.pop(key, None)
+                    return _download(image_data, converted["name"], converted["mime"])
                 error = "Es gibt keine fertige konvertierte Datei zum Herunterladen."
             if action == "json":
                 metadata = read_xmp_metadata(selected_file["path"])
@@ -292,6 +380,7 @@ def index(request):
         },
         "error": error,
         "preferred_scale": preference.preferred_scale,
+        "current_scale": current_scale,
     })
 
 

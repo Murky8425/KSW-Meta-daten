@@ -17,7 +17,7 @@
 <body><main>
   <header><div><p>Persönlicher Bereich · {{ request.user.username }}</p><h1>Mein Bildarchiv</h1></div><a href="{% url 'index' %}">Zurück zum Werkzeug</a></header>
   {% if saved_images %}
-    <section class="grid">{% for image in saved_images %}<article><h2>{{ image.original_filename }}</h2><p>Hochgeladen am {{ image.uploaded_at|date:"d.m.Y H:i" }}</p><a class="button" href="{% url 'download_image' image.id %}">Bild herunterladen</a></article>{% endfor %}</section>
+    <section class="grid">{% for image in saved_images %}<article><h2>{{ image.original_filename }}</h2><p>Hochgeladen am {{ image.uploaded_at|date:"d.m.Y H:i" }}</p><a class="button" href="{% url 'index' %}?load={{ image.storage_name }}">Im Editor öffnen</a><form method="post" action="{% url 'delete_archive_image' image.id %}">{% csrf_token %}<button type="submit">Löschen</button></form></article>{% endfor %}</section>
   {% else %}
     <p>Noch keine Bilder gespeichert. Lade im Werkzeug ein Bild hoch, um es hier wiederzufinden.</p>
   {% endif %}
