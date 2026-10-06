@@ -25,6 +25,7 @@
     {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
     <button type="submit">Anmelden</button>
   </form>
+  <p><a href="{% url 'resend_verification' %}">Bestätigungs-E-Mail erneut senden</a></p>
   <p>Noch kein Konto? <a href="{% url 'register' %}">Registrieren</a></p>
 </main></body>
 </html>

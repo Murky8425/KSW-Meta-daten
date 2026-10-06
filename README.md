@@ -29,7 +29,8 @@ Konto wiederhergestellt oder manuell per bestätigtem E-Mail-Link endgültig
 gelöscht wird. Die manuelle Löschung entfernt auch die persönlichen Bilder.
 
 Im lokalen Entwicklungsmodus werden E-Mails im Server-Terminal ausgegeben. Auf
-dem Server wird Gmail-SMTP verwendet. Lege dort `/etc/ksw-metadata.env` an und
+dem Server wird SMTP automatisch aktiviert, sobald `EMAIL_HOST_USER` gesetzt
+ist. Gmail-SMTP wird verwendet. Lege dort `/etc/ksw-metadata.env` an und
 trage ein Gmail-App-Passwort ein (nicht das normale Google-Passwort):
 
 ```ini

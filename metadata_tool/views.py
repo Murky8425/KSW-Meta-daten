@@ -192,6 +192,27 @@ def verify_email(request, token):
     return render(request, "metadata_tool/verification_complete.html")
 
 
+def resend_verification(request):
+    if request.method == "POST":
+        email = request.POST.get("email", "").strip()
+        user = get_user_model().objects.filter(email__iexact=email, is_active=False).first()
+        lifecycle = AccountLifecycle.objects.filter(owner=user, email_verified=False).first() if user else None
+        if lifecycle:
+            token = signing.dumps({"user_id": user.pk, "email": user.email}, salt="metadata_tool.email-verification")
+            verification_url = request.build_absolute_uri(reverse("verify_email", args=[token]))
+            send_mail(
+                "E-Mail-Adresse bestätigen",
+                f"Bitte bestätige deine E-Mail-Adresse über diesen Link: {verification_url}",
+                None,
+                [user.email],
+                fail_silently=False,
+            )
+        return render(request, "metadata_tool/resend_verification_sent.html")
+    if request.method != "GET":
+        return HttpResponseNotAllowed(["GET", "POST"])
+    return render(request, "metadata_tool/resend_verification.html")
+
+
 def login_view(request):
     form = AccountLoginForm(request=request, data=request.POST or None)
     if request.method == "POST" and form.is_valid():

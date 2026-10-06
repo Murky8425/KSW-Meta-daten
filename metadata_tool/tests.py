@@ -78,6 +78,17 @@ class UserImageArchiveTests(TestCase):
         self.assertNotContains(self.client.get("/archive/"), "urlaub.png")
         self.assertEqual(self.client.get(f"/images/{stored_image.id}/download/").status_code, 404)
 
+    def test_unverified_account_can_request_another_verification_email(self):
+        self.register_max()
+        mail.outbox.clear()
+
+        response = self.client.post("/accounts/resend-verification/", {"email": "max@example.com"})
+
+        self.assertContains(response, "Falls ein unbestätigtes Konto")
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["max@example.com"])
+        self.assertIn("/accounts/verify/", mail.outbox[0].body)
+
     def test_resize_preference_is_saved_and_accepts_95_percent(self):
         user = get_user_model().objects.create_user(username="max", password="ImageVault99!abc")
         self.client.force_login(user)
