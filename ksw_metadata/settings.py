@@ -26,7 +26,7 @@ CSRF_TRUSTED_ORIGINS = [
 ]
 
 # Aktivierte Django-Anwendungen.
-INSTALLED_APPS = ["metadata_tool"]
+INSTALLED_APPS = ["django.contrib.sessions", "metadata_tool"]
 
 # Middleware verarbeitet Sicherheit, Sessions, allgemeine Requests und CSRF-Schutz.
 MIDDLEWARE = [
@@ -78,5 +78,5 @@ USE_TZ = True
 # Standardtyp für automatisch erzeugte Primärschlüssel.
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# Sessions werden ohne Datenbank als signierte Cookies gespeichert.
-SESSION_ENGINE = "django.contrib.sessions.backends.signed_cookies"
+# Der Browser erhält nur einen Sitzungsschlüssel; Sitzungsdaten bleiben serverseitig.
+SESSION_ENGINE = "django.contrib.sessions.backends.db"
