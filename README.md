@@ -17,6 +17,46 @@ Ein Konto kann über **Registrieren** auf der Website erstellt werden. Django
 speichert Passwörter nur gehasht; Bilder und Downloads gehören jeweils dem
 angemeldeten Benutzer.
 
+### Account-E-Mail und Inaktivität
+
+Bei der Registrierung ist eine E-Mail-Adresse erforderlich. Das Konto wird erst
+nach Bestätigung des Links aktiviert. Nach fünf Kalendermonaten ohne Anmeldung
+versendet der tägliche Account-Lauf eine Warnung. Nach sechs Monaten wird der
+Login gesperrt und ein einmaliger Recovery-Code versendet. Mit Benutzername,
+Passwort und Recovery-Code kann das Konto wieder freigeschaltet werden. Wie
+gewünscht bleiben gesperrte Konten und Bilder unbegrenzt gespeichert, bis das
+Konto wiederhergestellt oder manuell per bestätigtem E-Mail-Link endgültig
+gelöscht wird. Die manuelle Löschung entfernt auch die persönlichen Bilder.
+
+Im lokalen Entwicklungsmodus werden E-Mails im Server-Terminal ausgegeben. Auf
+dem Server wird Gmail-SMTP verwendet. Lege dort `/etc/ksw-metadata.env` an und
+trage ein Gmail-App-Passwort ein (nicht das normale Google-Passwort):
+
+```ini
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_USE_TLS=true
+EMAIL_HOST_USER=dein-konto@gmail.com
+EMAIL_HOST_PASSWORD=DEIN_GOOGLE_APP_PASSWORT
+DEFAULT_FROM_EMAIL=dein-konto@gmail.com
+```
+
+Die Datei enthält ein Geheimnis und darf nicht ins Git-Repository. Beschränke
+ihre Berechtigungen auf root und den Dienstbenutzer. Nach dem Anlegen oder
+Ändern müssen Webdienst und täglicher Timer neu gestartet werden:
+
+```bash
+sudo chmod 640 /etc/ksw-metadata.env
+sudo chown root:rh-admin /etc/ksw-metadata.env
+sudo systemctl restart ksw-metadata.service
+sudo systemctl enable --now ksw-metadata-account-maintenance.timer
+sudo systemctl list-timers ksw-metadata-account-maintenance.timer
+```
+
+`install-server.sh` installiert und aktiviert den täglichen Timer. Für einen
+bereits eingerichteten Server müssen die neuen Dateien zunächst per Git
+übertragen und anschließend `sudo ./install-server.sh` ausgeführt werden.
+
 ### 1. ExifTool installieren
 
 ExifTool liest XMP zuverlässig aus JPG, PNG, TIFF, WebP und weiteren Formaten.

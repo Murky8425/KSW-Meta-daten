@@ -23,6 +23,15 @@ class UserPreference(models.Model):
         super().save(*args, **kwargs)
 
 
+class AccountLifecycle(models.Model):
+    owner = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="account_lifecycle")
+    email_verified = models.BooleanField(default=False)
+    verified_at = models.DateTimeField(null=True, blank=True)
+    warning_sent_at = models.DateTimeField(null=True, blank=True)
+    deactivated_at = models.DateTimeField(null=True, blank=True)
+    recovery_code_hash = models.CharField(max_length=128, blank=True)
+
+
 class ExtractedMetadata(models.Model):
     filename = models.CharField(max_length=255)
     file_hash = models.CharField(max_length=64, unique=True)

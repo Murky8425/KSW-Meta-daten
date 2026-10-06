@@ -1,0 +1,11 @@
+[Unit]
+Description=Tägliche Prüfung auf inaktive KSW-Metadaten-Konten
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=10m
+Unit=ksw-metadata-account-maintenance.service
+
+[Install]
+WantedBy=timers.target

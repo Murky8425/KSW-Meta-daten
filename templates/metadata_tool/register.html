@@ -17,6 +17,7 @@
 </head>
 <body><main>
   <p>Bildarchiv</p><h1>Konto erstellen</h1>
+  <p>Nach der Registrierung erhältst du einen Bestätigungslink per E-Mail. Erst danach kannst du dich anmelden.</p>
   <form method="post">{% csrf_token %}
     {% for field in form %}
       <label for="{{ field.id_for_label }}">{{ field.label }}</label>

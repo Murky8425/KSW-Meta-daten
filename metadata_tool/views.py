@@ -9,14 +9,19 @@ import uuid
 from urllib.parse import quote
 from pathlib import Path
 
-from django.contrib.auth import login, logout
+from django.contrib.auth import get_user_model, login, logout
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth.forms import UserCreationForm
+from django.core import signing
+from django.core.mail import send_mail
 from django.http import HttpResponse, HttpResponseNotAllowed
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
+from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 from PIL import Image
 
-from .models import ExtractedMetadata, StoredImage, UserPreference
+from .forms import AccountLoginForm, RegistrationForm
+from .models import AccountLifecycle, ExtractedMetadata, StoredImage, UserPreference
 from .services import convert_image, create_zip, read_xmp_metadata, remove_metadata, resize_image, write_xmp_metadata
 
 
@@ -114,12 +119,12 @@ def _save_preferred_scale(request, scale):
 def _delete_selected_image(request, storage_name):
     stored_image = StoredImage.objects.filter(owner=request.user, storage_name=storage_name).first()
     if stored_image:
-        directory = _upload_dir(request)
-        file_path = directory / stored_image.storage_name
-        if file_path.exists():
+        directory_value = request.session.get("upload_dir")
+        directory = Path(directory_value) if directory_value else None
+        if directory and directory.is_dir() and directory.parent == Path(tempfile.gettempdir()):
+            file_path = directory / stored_image.storage_name
             file_path.unlink(missing_ok=True)
         stored_image.delete()
-    _clear_uploads(request)
 
 
 def _persist_image(request, file, image_data, scale=None):
@@ -150,12 +155,91 @@ def _archive_derived_image(request, filename, image_data, scale=None):
 def register(request):
     if request.user.is_authenticated:
         return redirect("index")
-    form = UserCreationForm(request.POST or None)
+    form = RegistrationForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
-        user = form.save()
-        login(request, user)
-        return redirect("index")
+        user = form.save(commit=False)
+        user.email = form.cleaned_data["email"]
+        user.is_active = False
+        user.save()
+        AccountLifecycle.objects.create(owner=user)
+        token = signing.dumps({"user_id": user.pk, "email": user.email}, salt="metadata_tool.email-verification")
+        verification_url = request.build_absolute_uri(reverse("verify_email", args=[token]))
+        send_mail(
+            "E-Mail-Adresse bestätigen",
+            f"Bitte bestätige deine E-Mail-Adresse über diesen Link: {verification_url}",
+            None,
+            [user.email],
+            fail_silently=False,
+        )
+        return render(request, "metadata_tool/verification_sent.html", {"email": user.email})
     return render(request, "metadata_tool/register.html", {"form": form})
+
+
+def verify_email(request, token):
+    try:
+        payload = signing.loads(token, salt="metadata_tool.email-verification", max_age=60 * 60 * 24 * 3)
+        user = get_user_model().objects.get(pk=payload["user_id"], email=payload["email"])
+    except (signing.BadSignature, signing.SignatureExpired, KeyError, get_user_model().DoesNotExist):
+        return render(request, "metadata_tool/verification_invalid.html", status=400)
+
+    lifecycle, _ = AccountLifecycle.objects.get_or_create(owner=user)
+    if not lifecycle.email_verified:
+        lifecycle.email_verified = True
+        lifecycle.verified_at = timezone.now()
+        lifecycle.save(update_fields=["email_verified", "verified_at"])
+        user.is_active = True
+        user.save(update_fields=["is_active"])
+    return render(request, "metadata_tool/verification_complete.html")
+
+
+def login_view(request):
+    form = AccountLoginForm(request=request, data=request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        login(request, form.get_user())
+        next_url = request.POST.get("next") or request.GET.get("next")
+        if next_url and url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
+            return redirect(next_url)
+        return redirect("index")
+    return render(request, "metadata_tool/login.html", {"form": form, "next": request.GET.get("next", "")})
+
+
+@login_required
+def account_delete(request):
+    if request.method != "POST":
+        return render(request, "metadata_tool/account_delete.html")
+    lifecycle = AccountLifecycle.objects.filter(owner=request.user, email_verified=True).first()
+    if lifecycle is None:
+        return render(request, "metadata_tool/account_delete.html", {
+            "error": "Für die Löschbestätigung wird eine bestätigte E-Mail-Adresse benötigt.",
+        }, status=400)
+
+    token = signing.dumps({"user_id": request.user.pk, "email": request.user.email}, salt="metadata_tool.account-deletion")
+    confirmation_url = request.build_absolute_uri(reverse("confirm_account_deletion", args=[token]))
+    send_mail(
+        "Kontolöschung bestätigen",
+        f"Dein Konto und die gespeicherten Bilder werden endgültig gelöscht. Bestätige die Löschung innerhalb von 24 Stunden: {confirmation_url}",
+        None,
+        [request.user.email],
+        fail_silently=False,
+    )
+    return render(request, "metadata_tool/account_delete_sent.html", {"email": request.user.email})
+
+
+def confirm_account_deletion(request, token):
+    try:
+        payload = signing.loads(token, salt="metadata_tool.account-deletion", max_age=60 * 60 * 24)
+        user = get_user_model().objects.get(pk=payload["user_id"], email=payload["email"])
+    except (signing.BadSignature, signing.SignatureExpired, KeyError, get_user_model().DoesNotExist):
+        return render(request, "metadata_tool/account_delete_invalid.html", status=400)
+
+    if request.method == "POST":
+        user.delete()
+        _clear_uploads(request)
+        logout(request)
+        return render(request, "metadata_tool/account_deleted.html")
+    if request.method != "GET":
+        return HttpResponseNotAllowed(["GET", "POST"])
+    return render(request, "metadata_tool/account_delete_confirm.html", {"token": token})
 
 
 def logout_view(request):
@@ -273,6 +357,10 @@ def index(request):
     if request.method == "POST" and selected_file:
         try:
             action = request.POST.get("action")
+            if action == "delete-all-selected":
+                for file in files:
+                    _delete_selected_image(request, file["key"])
+                return redirect("index")
             if action == "batch":
                 updated = []
                 for file in files:

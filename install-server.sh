@@ -23,9 +23,12 @@ python3 -m venv "$PROJECT_DIR/.venv"
 
 install -m 0755 "$PROJECT_DIR/start-server.sh" "/usr/local/bin/$SERVICE_NAME"
 install -m 0644 "$PROJECT_DIR/$SERVICE_NAME.service" "/etc/systemd/system/$SERVICE_NAME.service"
+install -m 0644 "$PROJECT_DIR/ksw-metadata-account-maintenance.service" "/etc/systemd/system/ksw-metadata-account-maintenance.service"
+install -m 0644 "$PROJECT_DIR/ksw-metadata-account-maintenance.timer" "/etc/systemd/system/ksw-metadata-account-maintenance.timer"
 systemctl daemon-reload
 systemctl enable "$SERVICE_NAME.service"
 systemctl start "$SERVICE_NAME.service"
+systemctl enable --now ksw-metadata-account-maintenance.timer
 
 echo "Installation abgeschlossen. Status:"
 systemctl --no-pager --full status "$SERVICE_NAME.service" || true
