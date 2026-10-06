@@ -5,14 +5,18 @@ import json
 import mimetypes
 import shutil
 import tempfile
+import uuid
 from urllib.parse import quote
 from pathlib import Path
 
-from django.http import HttpResponse
-from django.shortcuts import redirect, render
+from django.contrib.auth import login, logout
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.forms import UserCreationForm
+from django.http import HttpResponse, HttpResponseNotAllowed
+from django.shortcuts import get_object_or_404, redirect, render
 from PIL import Image
 
-from .models import ExtractedMetadata
+from .models import ExtractedMetadata, StoredImage, UserPreference
 from .services import convert_image, create_zip, read_xmp_metadata, remove_metadata, resize_image, write_xmp_metadata
 
 
@@ -21,10 +25,15 @@ ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp", ".heic"
 
 def _upload_dir(request):
     directory = request.session.get("upload_dir")
-    if not directory:
-        return None
-    path = Path(directory)
-    return path if path.is_dir() and path.parent == Path(tempfile.gettempdir()) else None
+    path = Path(directory) if directory else None
+    if path and path.is_dir() and path.parent == Path(tempfile.gettempdir()):
+        return path
+
+    path = Path(tempfile.mkdtemp(prefix="ksw-meta-"))
+    for image in StoredImage.objects.filter(owner=request.user):
+        (path / image.storage_name).write_bytes(bytes(image.image_data))
+    request.session["upload_dir"] = str(path)
+    return path
 
 
 def _fields(data):
@@ -57,7 +66,13 @@ def _file_context(directory):
                 preview = _preview_data(path, mime)
             except (OSError, ValueError):
                 preview = ""
-            files.append({"name": path.name, "path": path, "mime": mime, "preview": preview})
+            files.append({
+                "key": path.name,
+                "name": path.name,
+                "path": path,
+                "mime": mime,
+                "preview": preview,
+            })
     return files
 
 
@@ -77,11 +92,56 @@ def _converted_context(request, directory):
 
 
 def _clear_uploads(request):
-    directory = _upload_dir(request)
+    directory_value = request.session.get("upload_dir")
+    directory = Path(directory_value) if directory_value else None
+    if directory and (not directory.is_dir() or directory.parent != Path(tempfile.gettempdir())):
+        directory = None
     if directory:
         shutil.rmtree(directory, ignore_errors=True)
     for key in ("upload_dir", "converted_path", "converted_name", "converted_mime", "show_converted"):
         request.session.pop(key, None)
+
+
+def _save_preferred_scale(request, scale):
+    scale = int(scale)
+    if not 10 <= scale <= 200:
+        raise ValueError("Die Bildgröße muss zwischen 10 und 200 Prozent liegen.")
+    preference, _ = UserPreference.objects.get_or_create(owner=request.user)
+    preference.preferred_scale = scale
+    preference.save(update_fields=["preferred_scale"])
+
+
+def register(request):
+    if request.user.is_authenticated:
+        return redirect("index")
+    form = UserCreationForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        user = form.save()
+        login(request, user)
+        return redirect("index")
+    return render(request, "metadata_tool/register.html", {"form": form})
+
+
+def logout_view(request):
+    if request.method != "POST":
+        return HttpResponseNotAllowed(["POST"])
+    _clear_uploads(request)
+    logout(request)
+    return redirect("login")
+
+
+@login_required
+def download_image(request, image_id):
+    image = get_object_or_404(StoredImage, id=image_id, owner=request.user)
+    content_type = mimetypes.guess_type(image.original_filename)[0] or "application/octet-stream"
+    return _download(bytes(image.image_data), image.original_filename, content_type)
+
+
+@login_required
+def archive(request):
+    return render(request, "metadata_tool/archive.html", {
+        "saved_images": StoredImage.objects.filter(owner=request.user),
+    })
 
 
 def _save_metadata(file_path, filename, metadata):
@@ -106,6 +166,7 @@ def _save_metadata(file_path, filename, metadata):
     )
 
 
+@login_required
 def index(request):
     if request.method == "POST" and request.POST.get("action") == "clear":
         _clear_uploads(request)
@@ -117,22 +178,32 @@ def index(request):
     metadata = {}
 
     if request.method == "POST" and request.FILES.getlist("images"):
-        if directory:
-            shutil.rmtree(directory)
-        directory = Path(tempfile.mkdtemp(prefix="ksw-meta-"))
+        directory = _upload_dir(request)
         for uploaded in request.FILES.getlist("images"):
             safe_name = Path(uploaded.name).name
             if Path(safe_name).suffix.lower() in ALLOWED_EXTENSIONS:
-                (directory / safe_name).write_bytes(uploaded.read())
-        request.session["upload_dir"] = str(directory)
+                storage_name = safe_name
+                if StoredImage.objects.filter(owner=request.user, storage_name=storage_name).exists():
+                    stem = Path(safe_name).stem
+                    suffix = Path(safe_name).suffix.lower()
+                    storage_name = f"{stem}-{uuid.uuid4().hex[:8]}{suffix}"
+                image_data = uploaded.read()
+                StoredImage.objects.create(
+                    owner=request.user,
+                    original_filename=safe_name,
+                    storage_name=storage_name,
+                    image_data=image_data,
+                )
+                (directory / storage_name).write_bytes(image_data)
         return redirect("index")
 
     files = _file_context(directory)
     converted = _converted_context(request, directory)
-    names = {file["name"] for file in files}
+    names = {file["key"] for file in files}
     if selected_name not in names:
-        selected_name = files[0]["name"] if files else None
-    selected_file = next((file for file in files if file["name"] == selected_name), None)
+        selected_name = files[0]["key"] if files else None
+    selected_file = next((file for file in files if file["key"] == selected_name), None)
+    preference, _ = UserPreference.objects.get_or_create(owner=request.user)
 
     if request.method == "POST" and selected_file:
         try:
@@ -148,6 +219,7 @@ def index(request):
                     (f"{Path(file['name']).stem}-{scale}prozent{Path(file['name']).suffix}", resize_image(file["path"], scale))
                     for file in files
                 ]
+                _save_preferred_scale(request, scale)
                 response = HttpResponse(create_zip(resized), content_type="application/zip")
                 response["Content-Disposition"] = 'attachment; filename="bilder-skaliert.zip"'
                 return response
@@ -174,11 +246,9 @@ def index(request):
                 return _download(remove_metadata(selected_file["path"]), f"{Path(selected_name).stem}-ohne-metadaten{Path(selected_name).suffix}", selected_file["mime"])
             if action == "resize":
                 scale = request.POST.get("scale", "100")
-                return _download(
-                    resize_image(selected_file["path"], scale),
-                    f"{Path(selected_name).stem}-{scale}prozent{Path(selected_name).suffix}",
-                    selected_file["mime"],
-                )
+                resized = resize_image(selected_file["path"], scale)
+                _save_preferred_scale(request, scale)
+                return _download(resized, f"{Path(selected_file['name']).stem}-{scale}prozent{Path(selected_file['name']).suffix}", selected_file["mime"])
             if action == "convert":
                 target_format = request.POST.get("target_format", "png")
                 data, suffix, content_type = convert_image(selected_file["path"], target_format)
@@ -221,6 +291,7 @@ def index(request):
             "rights": metadata.get("XMP-dc:Rights", ""),
         },
         "error": error,
+        "preferred_scale": preference.preferred_scale,
     })
 
 

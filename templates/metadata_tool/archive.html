@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mein Bildarchiv</title>
+  <style>
+    :root { color-scheme:light; --ink:#17313b; --muted:#61747a; --paper:#f6f3ed; --panel:#fffdf9; --line:#d8e1df; --teal:#087f79; }
+    * { box-sizing:border-box; } body { margin:0; background:var(--paper); color:var(--ink); font:16px system-ui,sans-serif; }
+    main { max-width:1000px; margin:auto; padding:2rem; } header { display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap; }
+    h1 { margin:.2rem 0; } p { color:var(--muted); } a { color:#075d5b; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:1rem; margin-top:1.5rem; }
+    article { padding:1rem; background:var(--panel); border:1px solid var(--line); border-radius:8px; overflow-wrap:anywhere; }
+    .button { display:inline-block; padding:.65rem .9rem; border-radius:6px; background:var(--teal); color:white; text-decoration:none; font-weight:700; }
+  </style>
+</head>
+<body><main>
+  <header><div><p>Persönlicher Bereich · {{ request.user.username }}</p><h1>Mein Bildarchiv</h1></div><a href="{% url 'index' %}">Zurück zum Werkzeug</a></header>
+  {% if saved_images %}
+    <section class="grid">{% for image in saved_images %}<article><h2>{{ image.original_filename }}</h2><p>Hochgeladen am {{ image.uploaded_at|date:"d.m.Y H:i" }}</p><a class="button" href="{% url 'download_image' image.id %}">Bild herunterladen</a></article>{% endfor %}</section>
+  {% else %}
+    <p>Noch keine Bilder gespeichert. Lade im Werkzeug ein Bild hoch, um es hier wiederzufinden.</p>
+  {% endif %}
+</main></body>
+</html>

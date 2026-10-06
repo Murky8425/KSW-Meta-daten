@@ -1,7 +1,6 @@
 [Unit]
 Description=KSW Metadaten Django-Anwendung
-After=docker.service network-online.target
-Requires=docker.service
+After=network-online.target
 Wants=network-online.target
 
 [Service]

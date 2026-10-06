@@ -26,7 +26,13 @@ CSRF_TRUSTED_ORIGINS = [
 ]
 
 # Aktivierte Django-Anwendungen.
-INSTALLED_APPS = ["django.contrib.sessions", "metadata_tool"]
+INSTALLED_APPS = [
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "metadata_tool",
+]
 
 # Middleware verarbeitet Sicherheit, Sessions, allgemeine Requests und CSRF-Schutz.
 MIDDLEWARE = [
@@ -34,6 +40,8 @@ MIDDLEWARE = [
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
 ]
 
 # Zentrale URL-Konfiguration des Projekts.
@@ -44,26 +52,20 @@ TEMPLATES = [{
     "BACKEND": "django.template.backends.django.DjangoTemplates",
     "DIRS": [BASE_DIR / "templates"],
     "APP_DIRS": True,
-    "OPTIONS": {"context_processors": ["django.template.context_processors.request"]},
+    "OPTIONS": {"context_processors": [
+        "django.template.context_processors.request",
+        "django.contrib.auth.context_processors.auth",
+        "django.contrib.messages.context_processors.messages",
+    ]},
 }]
 
 # Einstiegspunkt für WSGI-fähige Server.
 WSGI_APPLICATION = "ksw_metadata.wsgi.application"
 
-# Oracle-Datenbank. Der Easy-Connect-DSN spricht den Oracle-Service (nicht SID)
-# des Docker-Containers an. Alle Werte können über Umgebungsvariablen
-# überschrieben werden.
-oracle_host = os.environ.get("ORACLE_HOST", "localhost")
-oracle_port = os.environ.get("ORACLE_PORT", "1521")
-oracle_service = os.environ.get("ORACLE_NAME", "FREEPDB1")
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.oracle",
-        "NAME": os.environ.get("ORACLE_DSN", f"{oracle_host}:{oracle_port}/{oracle_service}"),
-        "USER": os.environ.get("ORACLE_USER", "Murky"),
-        "PASSWORD": os.environ.get("ORACLE_PASSWORD", ""),
-        "HOST": "",
-        "PORT": "",
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": BASE_DIR / "db.sqlite3",
     }
 }
 
@@ -80,3 +82,14 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Der Browser erhält nur einen Sitzungsschlüssel; Sitzungsdaten bleiben serverseitig.
 SESSION_ENGINE = "django.contrib.sessions.backends.db"
+
+LOGIN_URL = "login"
+LOGIN_REDIRECT_URL = "index"
+LOGOUT_REDIRECT_URL = "login"
+
+AUTH_PASSWORD_VALIDATORS = [
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator", "OPTIONS": {"min_length": 10}},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+]

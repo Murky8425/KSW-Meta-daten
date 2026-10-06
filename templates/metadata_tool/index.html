@@ -27,6 +27,7 @@
 </head>
 <body><main>
   <section class="hero"><div class="eyebrow">Bildarchiv · Metadaten-Werkzeug</div><h1>XMP sichtbar machen.<br>Sauber weitergeben.</h1><p class="hero-copy">Bilder prüfen, Metadaten ergänzen und fertige Dateien im Originalformat herunterladen.</p></section>
+  <nav style="display:flex;justify-content:flex-end;align-items:center;gap:1rem;flex-wrap:wrap"><span>Angemeldet als <strong>{{ request.user.username }}</strong></span><a class="button" href="{% url 'archive' %}">Mein Bildarchiv</a><form method="post" action="{% url 'logout' %}" style="margin:0">{% csrf_token %}<button type="submit">Abmelden</button></form></nav>
   <form class="panel upload" method="post" enctype="multipart/form-data">{% csrf_token %}<label for="images">Bilder hier ablegen oder auswählen</label><input id="images" type="file" name="images" accept=".jpg,.jpeg,.png,.tif,.tiff,.webp,.heic,.avif" multiple><button type="submit">Bilder laden</button><p>Unterstützte Formate: JPG, PNG, TIFF, WebP, HEIC und AVIF.</p></form>
   {% if error %}<div class="panel notice error">{{ error }}</div>{% endif %}
   {% if files %}
@@ -48,16 +49,14 @@
 </main></body></html>
 {% if files %}
 <script>
-  const navigation = performance.getEntriesByType('navigation')[0];
-  const isReload = navigation && navigation.type === 'reload';
-  if (isReload) {
-    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
-    fetch(window.location.href, {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: {'X-CSRFToken': csrfToken, 'Content-Type': 'application/x-www-form-urlencoded'},
-      body: 'action=clear'
-    }).then(() => window.location.replace('/'));
-  }
+  const preferredScale = {{ preferred_scale }};
+  ['scale', 'batch-scale'].forEach(id => {
+    const slider = document.getElementById(id);
+    if (!slider) return;
+    slider.step = '1';
+    slider.value = preferredScale;
+    const output = document.getElementById(`${id}-value`);
+    if (output) output.value = preferredScale;
+  });
 </script>
 {% endif %}
