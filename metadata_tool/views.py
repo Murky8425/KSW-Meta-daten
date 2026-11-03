@@ -13,7 +13,7 @@ from django.contrib.auth import get_user_model, login, logout
 from django.contrib.auth.decorators import login_required
 from django.core import signing
 from django.core.mail import EmailMultiAlternatives, send_mail
-from django.http import HttpResponse, HttpResponseNotAllowed
+from django.http import FileResponse, Http404, HttpResponse, HttpResponseNotAllowed
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.template.loader import render_to_string
@@ -26,7 +26,8 @@ from .models import AccountLifecycle, ExtractedMetadata, StoredImage, UserPrefer
 from .services import convert_image, create_zip, read_xmp_metadata, remove_metadata, resize_image, write_xmp_metadata
 
 
-ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp", ".heic", ".avif"}
+VIDEO_EXTENSIONS = {".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm"}
+ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp", ".heic", ".avif"} | VIDEO_EXTENSIONS
 
 
 def _send_action_email(subject, recipient, heading, message, button_label, action_url, validity, note):
@@ -87,16 +88,20 @@ def _file_context(directory):
     for path in sorted(directory.iterdir()):
         if path.is_file() and not path.name.startswith(".converted-"):
             mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
-            try:
-                preview = _preview_data(path, mime)
-            except (OSError, ValueError):
-                preview = ""
+            is_video = path.suffix.lower() in VIDEO_EXTENSIONS
+            preview = ""
+            if not is_video:
+                try:
+                    preview = _preview_data(path, mime)
+                except (OSError, ValueError):
+                    pass
             files.append({
                 "key": path.name,
                 "name": path.name,
                 "path": path,
                 "mime": mime,
                 "preview": preview,
+                "is_video": is_video,
             })
     return files
 
@@ -407,6 +412,10 @@ def index(request):
     if request.method == "POST" and selected_file:
         try:
             action = request.POST.get("action")
+            if action in {"batch-resize", "batch-convert"} and any(file["is_video"] for file in files):
+                raise ValueError("Skalierung und Bildkonvertierung sind nur für Bilddateien verfügbar.")
+            if action in {"resize", "convert"} and selected_file["is_video"]:
+                raise ValueError("Skalierung und Bildkonvertierung sind nur für Bilddateien verfügbar.")
             if action == "delete-all-selected":
                 for file in files:
                     _delete_selected_image(request, file["key"])
@@ -519,7 +528,27 @@ def index(request):
         "error": error,
         "preferred_scale": preference.preferred_scale,
         "current_scale": current_scale,
+        "selected_is_video": selected_file["is_video"] if selected_file else False,
+        "has_video": any(file["is_video"] for file in files),
     })
+
+
+@login_required
+def preview_upload(request, filename):
+    directory_value = request.session.get("upload_dir")
+    directory = Path(directory_value) if directory_value else None
+    if (
+        directory is None
+        or directory.parent != Path(tempfile.gettempdir())
+        or Path(filename).name != filename
+        or Path(filename).suffix.lower() not in VIDEO_EXTENSIONS
+    ):
+        raise Http404
+    video_path = directory / filename
+    if not video_path.is_file():
+        raise Http404
+    content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    return FileResponse(video_path.open("rb"), content_type=content_type)
 
 
 def _download(data, filename, content_type):

@@ -2,6 +2,7 @@ import io
 import re
 import zipfile
 from datetime import timedelta
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -81,6 +82,38 @@ class UserImageArchiveTests(TestCase):
         self.client.force_login(other_user)
         self.assertNotContains(self.client.get("/archive/"), "urlaub.png")
         self.assertEqual(self.client.get(f"/images/{stored_image.id}/download/").status_code, 404)
+
+    def test_video_upload_preview_and_metadata_edit(self):
+        user = get_user_model().objects.create_user(username="video-user", password="ImageVault99!abc")
+        self.client.force_login(user)
+        video_data = b"test video data"
+
+        response = self.client.post("/", {
+            "images": SimpleUploadedFile("clip.mp4", video_data, content_type="video/mp4"),
+        })
+
+        self.assertRedirects(response, "/")
+        stored_video = StoredImage.objects.get(owner=user, original_filename="clip.mp4")
+        preview = self.client.get(f"/upload-preview/{stored_video.storage_name}/")
+        self.assertEqual(preview["Content-Type"], "video/mp4")
+        self.assertEqual(preview.streaming_content.__next__(), video_data)
+
+        with patch("metadata_tool.views.read_xmp_metadata", return_value={"XMP-dc:Title": "Alter Titel"}):
+            editor = self.client.get("/?selected=clip.mp4")
+        self.assertEqual(editor.context["files"][0]["is_video"], True)
+        self.assertEqual(editor.context["metadata_fields"]["title"], "Alter Titel")
+        self.assertContains(editor, "<video controls preload=\"metadata\">")
+        self.assertContains(editor, ".mp4,.mov,.m4v,.avi,.mkv,.webm")
+
+        with patch("metadata_tool.views.write_xmp_metadata", return_value=b"edited video data"):
+            edited = self.client.post("/", {
+                "action": "single",
+                "selected": "clip.mp4",
+                "title": "Neuer Titel",
+            })
+        self.assertEqual(edited.content, b"edited video data")
+        stored_video.refresh_from_db()
+        self.assertEqual(bytes(stored_video.image_data), b"edited video data")
 
     def test_unverified_account_can_request_another_verification_email(self):
         self.register_max()
@@ -233,7 +266,7 @@ class UserImageArchiveTests(TestCase):
         self.client.post("/", {"images": [first, second]})
         first_image = StoredImage.objects.get(owner=user, original_filename="erstes.png")
         second_image = StoredImage.objects.get(owner=user, original_filename="zweites.png")
-        self.assertContains(self.client.get("/"), "Dieses Bild löschen", count=2)
+        self.assertContains(self.client.get("/"), "Datei löschen", count=2)
 
         response = self.client.post("/", {
             "action": "delete-selected",
