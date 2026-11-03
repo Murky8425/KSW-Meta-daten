@@ -155,7 +155,7 @@ def _save_preferred_scale(request, scale):
     preference.save(update_fields=["preferred_scale"])
 
 
-def _delete_selected_image(request, storage_name):
+def _remove_from_selection(request, storage_name):
     stored_image = StoredImage.objects.filter(owner=request.user, storage_name=storage_name).first()
     if stored_image:
         directory_value = request.session.get("upload_dir")
@@ -163,7 +163,6 @@ def _delete_selected_image(request, storage_name):
         if directory and directory.is_dir() and directory.parent == Path(tempfile.gettempdir()):
             file_path = directory / stored_image.storage_name
             file_path.unlink(missing_ok=True)
-        stored_image.delete()
 
 
 def _persist_image(request, file, image_data, scale=None):
@@ -416,7 +415,7 @@ def index(request):
     converted = _converted_context(request, directory)
     if request.method == "POST" and request.POST.get("action") == "delete-all-selected":
         for file in files:
-            _delete_selected_image(request, file["key"])
+            _remove_from_selection(request, file["key"])
         return redirect("index")
 
     names = {file["key"] for file in files}
@@ -484,7 +483,7 @@ def index(request):
                 _persist_image(request, selected_file, image_data)
                 return _download(image_data, f"{Path(selected_name).stem}-mit-xmp{Path(selected_name).suffix}", selected_file["mime"])
             if action == "delete-selected":
-                _delete_selected_image(request, selected_name)
+                _remove_from_selection(request, selected_name)
                 return redirect("index")
             if action == "remove":
                 image_data = remove_metadata(selected_file["path"])

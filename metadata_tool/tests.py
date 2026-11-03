@@ -419,13 +419,12 @@ class UserImageArchiveTests(TestCase):
             "selected": stored_image.storage_name,
         })
         self.assertRedirects(delete_response, "/")
-        self.assertFalse(StoredImage.objects.filter(id=stored_image.id).exists())
+        self.assertTrue(StoredImage.objects.filter(id=stored_image.id).exists())
+        self.assertEqual(self.client.get("/").context["files"], [])
 
-        self.client.post("/", {"images": upload})
-        archived_image = StoredImage.objects.get(owner=user)
-        archive_response = self.client.post(f"/images/{archived_image.id}/delete/", {})
+        archive_response = self.client.post(f"/images/{stored_image.id}/delete/", {})
         self.assertEqual(archive_response.status_code, 302)
-        self.assertFalse(StoredImage.objects.filter(id=archived_image.id).exists())
+        self.assertFalse(StoredImage.objects.filter(id=stored_image.id).exists())
 
     def test_delete_one_image_from_selected_gallery_keeps_other_images(self):
         user = get_user_model().objects.create_user(username="gallerydelete", password="ImageVault99!abc")
@@ -435,7 +434,7 @@ class UserImageArchiveTests(TestCase):
         self.client.post("/", {"images": [first, second]})
         first_image = StoredImage.objects.get(owner=user, original_filename="erstes.png")
         second_image = StoredImage.objects.get(owner=user, original_filename="zweites.png")
-        self.assertContains(self.client.get("/"), "Datei löschen", count=3)
+        self.assertContains(self.client.get("/"), "Aus Editor entfernen", count=3)
 
         response = self.client.post(f"/?selected={second_image.storage_name}", {
             "action": "delete-selected",
@@ -443,7 +442,7 @@ class UserImageArchiveTests(TestCase):
         })
 
         self.assertRedirects(response, "/")
-        self.assertFalse(StoredImage.objects.filter(id=first_image.id).exists())
+        self.assertTrue(StoredImage.objects.filter(id=first_image.id).exists())
         self.assertTrue(StoredImage.objects.filter(id=second_image.id).exists())
         page = self.client.get("/")
         self.assertEqual([file["name"] for file in page.context["files"]], [second_image.storage_name])
@@ -458,7 +457,7 @@ class UserImageArchiveTests(TestCase):
         second_image = StoredImage.objects.get(owner=user, original_filename="zweites.png")
 
         page = self.client.get(f"/?load={first_image.storage_name}")
-        self.assertContains(page, "Alle ausgewählten Dateien löschen")
+        self.assertContains(page, "Alle ausgewählten Dateien aus Editor entfernen")
         self.assertEqual([file["name"] for file in page.context["files"]], [first_image.storage_name])
         response = self.client.post(
             f"/?load={first_image.storage_name}",
@@ -466,7 +465,7 @@ class UserImageArchiveTests(TestCase):
         )
 
         self.assertRedirects(response, "/")
-        self.assertFalse(StoredImage.objects.filter(id=first_image.id).exists())
+        self.assertTrue(StoredImage.objects.filter(id=first_image.id).exists())
         self.assertTrue(StoredImage.objects.filter(id=second_image.id).exists())
         self.assertEqual(self.client.get("/").context["files"], [])
 
