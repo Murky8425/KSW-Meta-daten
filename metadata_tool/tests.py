@@ -437,7 +437,7 @@ class UserImageArchiveTests(TestCase):
         second_image = StoredImage.objects.get(owner=user, original_filename="zweites.png")
         self.assertContains(self.client.get("/"), "Datei löschen", count=3)
 
-        response = self.client.post("/", {
+        response = self.client.post(f"/?selected={second_image.storage_name}", {
             "action": "delete-selected",
             "selected": first_image.storage_name,
         })

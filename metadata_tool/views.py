@@ -373,7 +373,9 @@ def index(request):
         _clear_uploads(request)
         return redirect("index")
 
-    selected_name = request.GET.get("selected") or request.GET.get("load") or request.POST.get("selected")
+    selected_name = (
+        request.POST.get("selected") if request.method == "POST" else None
+    ) or request.GET.get("selected") or request.GET.get("load")
     archived_image = None
     if request.method == "GET" and request.GET.get("load"):
         archived_image = StoredImage.objects.filter(
