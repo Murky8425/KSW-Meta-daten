@@ -414,6 +414,11 @@ def index(request):
 
     files = _file_context(directory)
     converted = _converted_context(request, directory)
+    if request.method == "POST" and request.POST.get("action") == "delete-all-selected":
+        for file in files:
+            _delete_selected_image(request, file["key"])
+        return redirect("index")
+
     names = {file["key"] for file in files}
     if selected_name not in names:
         selected_name = files[0]["key"] if files else None
@@ -432,10 +437,6 @@ def index(request):
                 raise ValueError("Skalierung und Bildkonvertierung sind nur für Bilddateien verfügbar.")
             if action in {"resize", "convert"} and selected_file["is_video"]:
                 raise ValueError("Skalierung und Bildkonvertierung sind nur für Bilddateien verfügbar.")
-            if action == "delete-all-selected":
-                for file in files:
-                    _delete_selected_image(request, file["key"])
-                return redirect("index")
             if action == "batch":
                 updated = []
                 for file in files:

@@ -460,7 +460,10 @@ class UserImageArchiveTests(TestCase):
         page = self.client.get(f"/?load={first_image.storage_name}")
         self.assertContains(page, "Alle ausgewählten Dateien löschen")
         self.assertEqual([file["name"] for file in page.context["files"]], [first_image.storage_name])
-        response = self.client.post("/", {"action": "delete-all-selected"})
+        response = self.client.post(
+            f"/?load={first_image.storage_name}",
+            {"action": "delete-all-selected"},
+        )
 
         self.assertRedirects(response, "/")
         self.assertFalse(StoredImage.objects.filter(id=first_image.id).exists())
