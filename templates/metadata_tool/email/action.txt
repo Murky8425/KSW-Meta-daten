@@ -1,0 +1,11 @@
+{{ heading }}
+
+{{ message }}
+
+{{ button_label }}:
+{{ action_url }}
+
+{{ validity }}
+{{ note }}
+
+Diese Nachricht wurde automatisch vom KSW Bildarchiv versendet.

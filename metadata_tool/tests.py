@@ -49,6 +49,10 @@ class UserImageArchiveTests(TestCase):
     def test_registration_upload_download_and_private_archive(self):
         registration = self.register_max()
         self.assertContains(registration, "Bitte E-Mail bestätigen")
+        verification_email = mail.outbox[-1]
+        self.assertIn("/accounts/verify/", verification_email.body)
+        self.assertEqual(verification_email.alternatives[0][1], "text/html")
+        self.assertIn("<a href=", verification_email.alternatives[0][0])
         user = get_user_model().objects.get(username="Max")
         self.assertFalse(user.is_active)
         blocked_login = self.client.post("/accounts/login/", {
@@ -88,6 +92,7 @@ class UserImageArchiveTests(TestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, ["max@example.com"])
         self.assertIn("/accounts/verify/", mail.outbox[0].body)
+        self.assertIn("E-Mail-Adresse bestätigen", mail.outbox[0].alternatives[0][0])
 
     def test_resize_preference_is_saved_and_accepts_95_percent(self):
         user = get_user_model().objects.create_user(username="max", password="ImageVault99!abc")
@@ -271,6 +276,7 @@ class UserImageArchiveTests(TestCase):
         self.assertContains(response, "E-Mail versendet")
         confirmation_message = next(message for message in mail.outbox if "delete@example.com" in message.to)
         token = re.search(r"/accounts/delete/confirm/([^\s]+)", confirmation_message.body).group(1)
+        self.assertIn("Konto endgültig löschen", confirmation_message.alternatives[0][0])
         confirmation_url = f"/accounts/delete/confirm/{token}"
         self.assertEqual(self.client.get(confirmation_url).status_code, 200)
         self.assertTrue(get_user_model().objects.filter(id=user.id).exists())

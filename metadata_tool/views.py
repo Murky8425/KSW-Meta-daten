@@ -12,10 +12,11 @@ from pathlib import Path
 from django.contrib.auth import get_user_model, login, logout
 from django.contrib.auth.decorators import login_required
 from django.core import signing
-from django.core.mail import send_mail
+from django.core.mail import EmailMultiAlternatives, send_mail
 from django.http import HttpResponse, HttpResponseNotAllowed
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.template.loader import render_to_string
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 from PIL import Image
@@ -26,6 +27,25 @@ from .services import convert_image, create_zip, read_xmp_metadata, remove_metad
 
 
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp", ".heic", ".avif"}
+
+
+def _send_action_email(subject, recipient, heading, message, button_label, action_url, validity, note):
+    context = {
+        "heading": heading,
+        "message": message,
+        "button_label": button_label,
+        "action_url": action_url,
+        "validity": validity,
+        "note": note,
+    }
+    email = EmailMultiAlternatives(
+        subject,
+        render_to_string("metadata_tool/email/action.txt", context),
+        None,
+        [recipient],
+    )
+    email.attach_alternative(render_to_string("metadata_tool/email/action.html", context), "text/html")
+    return email.send(fail_silently=False)
 
 
 def _upload_dir(request):
@@ -164,12 +184,15 @@ def register(request):
         AccountLifecycle.objects.create(owner=user)
         token = signing.dumps({"user_id": user.pk, "email": user.email}, salt="metadata_tool.email-verification")
         verification_url = request.build_absolute_uri(reverse("verify_email", args=[token]))
-        send_mail(
+        _send_action_email(
             "E-Mail-Adresse bestätigen",
-            f"Bitte bestätige deine E-Mail-Adresse über diesen Link: {verification_url}",
-            None,
-            [user.email],
-            fail_silently=False,
+            user.email,
+            "Bestätige deine E-Mail-Adresse",
+            "Mit der Bestätigung wird dein Konto aktiviert und du kannst das Bildarchiv nutzen.",
+            "E-Mail-Adresse bestätigen",
+            verification_url,
+            "Der Link ist 3 Tage gültig.",
+            "Falls du kein Konto erstellt hast, kannst du diese E-Mail ignorieren.",
         )
         return render(request, "metadata_tool/verification_sent.html", {"email": user.email})
     return render(request, "metadata_tool/register.html", {"form": form})
@@ -200,12 +223,15 @@ def resend_verification(request):
         if lifecycle:
             token = signing.dumps({"user_id": user.pk, "email": user.email}, salt="metadata_tool.email-verification")
             verification_url = request.build_absolute_uri(reverse("verify_email", args=[token]))
-            send_mail(
+            _send_action_email(
                 "E-Mail-Adresse bestätigen",
-                f"Bitte bestätige deine E-Mail-Adresse über diesen Link: {verification_url}",
-                None,
-                [user.email],
-                fail_silently=False,
+                user.email,
+                "Bestätige deine E-Mail-Adresse",
+                "Mit der Bestätigung wird dein Konto aktiviert und du kannst das Bildarchiv nutzen.",
+                "E-Mail-Adresse bestätigen",
+                verification_url,
+                "Der Link ist 3 Tage gültig.",
+                "Falls du kein Konto erstellt hast, kannst du diese E-Mail ignorieren.",
             )
         return render(request, "metadata_tool/resend_verification_sent.html")
     if request.method != "GET":
@@ -236,12 +262,15 @@ def account_delete(request):
 
     token = signing.dumps({"user_id": request.user.pk, "email": request.user.email}, salt="metadata_tool.account-deletion")
     confirmation_url = request.build_absolute_uri(reverse("confirm_account_deletion", args=[token]))
-    send_mail(
+    _send_action_email(
         "Kontolöschung bestätigen",
-        f"Dein Konto und die gespeicherten Bilder werden endgültig gelöscht. Bestätige die Löschung innerhalb von 24 Stunden: {confirmation_url}",
-        None,
-        [request.user.email],
-        fail_silently=False,
+        request.user.email,
+        "Kontolöschung bestätigen",
+        "Du hast die endgültige Löschung deines Kontos und aller gespeicherten Bilder angefordert.",
+        "Konto endgültig löschen",
+        confirmation_url,
+        "Der Link ist 24 Stunden gültig.",
+        "Falls du die Löschung nicht angefordert hast, ignoriere diese E-Mail. Dein Konto bleibt bestehen.",
     )
     return render(request, "metadata_tool/account_delete_sent.html", {"email": request.user.email})
 
