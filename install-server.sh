@@ -10,7 +10,7 @@ if [[ "$(id -u)" -ne 0 ]]; then
 fi
 
 apt-get update
-apt-get install -y python3 python3-venv python3-pip libimage-exiftool-perl
+apt-get install -y python3 python3-venv python3-pip libimage-exiftool-perl ffmpeg
 
 if ! id rh-admin >/dev/null 2>&1; then
     echo "Der Benutzer rh-admin wurde nicht gefunden." >&2

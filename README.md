@@ -1,6 +1,6 @@
 # KSW-Meta-daten
 
-Django-Anwendung zum Auslesen und Bearbeiten von XMP-Metadaten in Bilddateien.
+Django-Anwendung zum Auslesen und Bearbeiten von XMP-Metadaten in Bild- und Videodateien.
 
 ## Installation
 
@@ -58,21 +58,21 @@ sudo systemctl list-timers ksw-metadata-account-maintenance.timer
 bereits eingerichteten Server müssen die neuen Dateien zunächst per Git
 übertragen und anschließend `sudo ./install-server.sh` ausgeführt werden.
 
-### 1. ExifTool installieren
+### 1. ExifTool und FFmpeg installieren
 
-ExifTool liest XMP zuverlässig aus JPG, PNG, TIFF, WebP und weiteren Formaten.
+ExifTool liest und schreibt Metadaten in unterstützten Bild- und Videoformaten. FFmpeg wird zum Ändern der Videoauflösung benötigt.
 
 Ubuntu/Debian:
 
 ```bash
 sudo apt update
-sudo apt install libimage-exiftool-perl
+sudo apt install libimage-exiftool-perl ffmpeg
 ```
 
 macOS:
 
 ```bash
-brew install exiftool
+brew install exiftool ffmpeg
 ```
 
 Windows: ExifTool von <https://exiftool.org/> herunterladen und `exiftool.exe` in

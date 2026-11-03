@@ -104,6 +104,8 @@ class UserImageArchiveTests(TestCase):
         self.assertEqual(editor.context["metadata_fields"]["title"], "Alter Titel")
         self.assertContains(editor, "<video controls preload=\"metadata\">")
         self.assertContains(editor, ".mp4,.mov,.m4v,.avi,.mkv,.webm")
+        self.assertContains(editor, "Auflösung ändern")
+        self.assertContains(editor, "Metadaten speichern")
 
         with patch("metadata_tool.views.write_xmp_metadata", return_value=b"edited video data"):
             edited = self.client.post("/", {
@@ -114,6 +116,35 @@ class UserImageArchiveTests(TestCase):
         self.assertEqual(edited.content, b"edited video data")
         stored_video.refresh_from_db()
         self.assertEqual(bytes(stored_video.image_data), b"edited video data")
+
+        with patch("metadata_tool.views.resize_video", return_value=b"resized video data") as resize_video:
+            resized = self.client.post("/", {
+                "action": "resolution",
+                "selected": "clip.mp4",
+                "width": "1280",
+                "height": "720",
+            })
+        self.assertEqual(resized.content, b"resized video data")
+        self.assertEqual(resized["Content-Type"], "video/mp4")
+        resize_video.assert_called_once()
+        self.assertTrue(StoredImage.objects.filter(owner=user, original_filename="clip-1280x720.mp4").exists())
+
+    def test_selected_image_can_be_resized_to_pixel_dimensions(self):
+        user = get_user_model().objects.create_user(username="resolution-user", password="ImageVault99!abc")
+        self.client.force_login(user)
+        self.client.post("/", {
+            "images": SimpleUploadedFile("photo.png", self.make_png(), content_type="image/png"),
+        })
+
+        response = self.client.post("/", {
+            "action": "resolution",
+            "selected": "photo.png",
+            "width": "100",
+            "height": "100",
+        })
+
+        self.assertEqual(Image.open(io.BytesIO(response.content)).size, (100, 50))
+        self.assertTrue(StoredImage.objects.filter(owner=user, original_filename="photo-100x100.png").exists())
 
     def test_unverified_account_can_request_another_verification_email(self):
         self.register_max()
@@ -266,7 +297,7 @@ class UserImageArchiveTests(TestCase):
         self.client.post("/", {"images": [first, second]})
         first_image = StoredImage.objects.get(owner=user, original_filename="erstes.png")
         second_image = StoredImage.objects.get(owner=user, original_filename="zweites.png")
-        self.assertContains(self.client.get("/"), "Datei löschen", count=2)
+        self.assertContains(self.client.get("/"), "Datei löschen", count=3)
 
         response = self.client.post("/", {
             "action": "delete-selected",
@@ -289,7 +320,7 @@ class UserImageArchiveTests(TestCase):
         second_image = StoredImage.objects.get(owner=user, original_filename="zweites.png")
 
         page = self.client.get(f"/?load={first_image.storage_name}")
-        self.assertContains(page, "Alle ausgewählten Bilder löschen")
+        self.assertContains(page, "Alle ausgewählten Dateien löschen")
         self.assertEqual([file["name"] for file in page.context["files"]], [first_image.storage_name])
         response = self.client.post("/", {"action": "delete-all-selected"})
 

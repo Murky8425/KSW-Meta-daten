@@ -93,6 +93,61 @@ def resize_image(file_path, scale):
     return output.getvalue()
 
 
+def _resolution_dimensions(width, height):
+    try:
+        width = int(width)
+        height = int(height)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Breite und Höhe müssen gültige Pixelwerte sein.") from exc
+    if not 64 <= width <= 7680 or not 64 <= height <= 7680 or width * height > 16_777_216:
+        raise ValueError("Die Auflösung muss mindestens 64 Pixel und darf höchstens 16 Megapixel groß sein.")
+    return width, height
+
+
+def resize_image_to_dimensions(file_path, width, height):
+    width, height = _resolution_dimensions(width, height)
+    suffix = Path(file_path).suffix.lower()
+    format_by_suffix = {
+        ".jpg": "JPEG", ".jpeg": "JPEG", ".png": "PNG", ".tif": "TIFF",
+        ".tiff": "TIFF", ".webp": "WEBP", ".heic": "HEIF", ".avif": "AVIF",
+    }
+    image_format = format_by_suffix.get(suffix)
+    if image_format is None:
+        raise ValueError("Dieses Bildformat kann nicht in der Auflösung geändert werden.")
+
+    with Image.open(file_path) as image:
+        image.thumbnail((width, height), Image.Resampling.LANCZOS)
+        output = io.BytesIO()
+        save_image = image.convert("RGB") if image_format == "JPEG" and image.mode not in {"RGB", "L"} else image
+        save_options = {"quality": 92} if image_format in {"JPEG", "WEBP", "HEIF", "AVIF"} else {}
+        save_image.save(output, format=image_format, **save_options)
+    return output.getvalue()
+
+
+def resize_video(file_path, width, height):
+    width, height = _resolution_dimensions(width, height)
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        raise RuntimeError("FFmpeg wurde nicht gefunden. Installiere es mit 'sudo apt install ffmpeg'.")
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        output = Path(temp_dir) / f"{Path(file_path).stem}-aufloesung.mp4"
+        arguments = [
+            ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+            "-i", str(file_path), "-map", "0:v:0", "-map", "0:a?",
+            "-vf", f"scale={width}:{height}:force_original_aspect_ratio=decrease:force_divisible_by=2",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+            "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(output),
+        ]
+        try:
+            result = subprocess.run(arguments, capture_output=True, text=True, check=False, timeout=600)
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError("Die Videoverarbeitung hat das Zeitlimit von 10 Minuten überschritten.") from exc
+        if result.returncode != 0:
+            raise ValueError(result.stderr.strip()[-1000:] or "FFmpeg konnte das Video nicht verarbeiten.")
+        return output.read_bytes()
+
+
 def convert_image(file_path, target_format):
     formats = {
         "png": ("PNG", "png"),

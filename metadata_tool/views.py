@@ -23,7 +23,16 @@ from PIL import Image
 
 from .forms import AccountLoginForm, RegistrationForm
 from .models import AccountLifecycle, ExtractedMetadata, StoredImage, UserPreference
-from .services import convert_image, create_zip, read_xmp_metadata, remove_metadata, resize_image, write_xmp_metadata
+from .services import (
+    convert_image,
+    create_zip,
+    read_xmp_metadata,
+    remove_metadata,
+    resize_image,
+    resize_image_to_dimensions,
+    resize_video,
+    write_xmp_metadata,
+)
 
 
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm"}
@@ -271,7 +280,7 @@ def account_delete(request):
         "Kontolöschung bestätigen",
         request.user.email,
         "Kontolöschung bestätigen",
-        "Du hast die endgültige Löschung deines Kontos und aller gespeicherten Bilder angefordert.",
+        "Du hast die endgültige Löschung deines Kontos und aller gespeicherten Bilder und Videos angefordert.",
         "Konto endgültig löschen",
         confirmation_url,
         "Der Link ist 24 Stunden gültig.",
@@ -480,6 +489,18 @@ def index(request):
                 _archive_derived_image(request, resized_name, resized, scale=scale)
                 _save_preferred_scale(request, scale)
                 return _download(resized, resized_name, selected_file["mime"])
+            if action == "resolution":
+                width, height = request.POST.get("width", "1920"), request.POST.get("height", "1080")
+                if selected_file["is_video"]:
+                    resized = resize_video(selected_file["path"], width, height)
+                    resized_name = f"{Path(selected_name).stem}-{int(width)}x{int(height)}.mp4"
+                    content_type = "video/mp4"
+                else:
+                    resized = resize_image_to_dimensions(selected_file["path"], width, height)
+                    resized_name = f"{Path(selected_name).stem}-{int(width)}x{int(height)}{Path(selected_name).suffix}"
+                    content_type = selected_file["mime"]
+                _archive_derived_image(request, resized_name, resized)
+                return _download(resized, resized_name, content_type)
             if action == "convert":
                 target_format = request.POST.get("target_format", "png")
                 data, suffix, content_type = convert_image(selected_file["path"], target_format)

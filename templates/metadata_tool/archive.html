@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Mein Bildarchiv</title>
+  <title>Mein Medienarchiv</title>
   <style>
     :root { color-scheme:light; --ink:#17313b; --muted:#61747a; --paper:#f6f3ed; --panel:#fffdf9; --line:#d8e1df; --teal:#087f79; }
     * { box-sizing:border-box; } body { margin:0; background:var(--paper); color:var(--ink); font:16px system-ui,sans-serif; }
@@ -15,11 +15,11 @@
   </style>
 </head>
 <body><main>
-  <header><div><p>Persönlicher Bereich · {{ request.user.username }}</p><h1>Mein Bildarchiv</h1></div><a href="{% url 'index' %}">Zurück zum Werkzeug</a></header>
+  <header><div><p>Persönlicher Bereich · {{ request.user.username }}</p><h1>Mein Medienarchiv</h1></div><a href="{% url 'index' %}">Zurück zum Werkzeug</a></header>
   {% if saved_images %}
     <section class="grid">{% for image in saved_images %}<article><h2>{{ image.original_filename }}</h2><p>Hochgeladen am {{ image.uploaded_at|date:"d.m.Y H:i" }}</p><a class="button" href="{% url 'index' %}?load={{ image.storage_name }}">Im Editor öffnen</a><form method="post" action="{% url 'delete_archive_image' image.id %}">{% csrf_token %}<button type="submit">Löschen</button></form></article>{% endfor %}</section>
   {% else %}
-    <p>Noch keine Bilder gespeichert. Lade im Werkzeug ein Bild hoch, um es hier wiederzufinden.</p>
+    <p>Noch keine Dateien gespeichert. Lade im Werkzeug Bilder oder Videos hoch, um sie hier wiederzufinden.</p>
   {% endif %}
 </main></body>
 </html>
