@@ -2,6 +2,7 @@ import base64
 import hashlib
 import io
 import json
+import math
 import mimetypes
 import shutil
 import tempfile
@@ -28,6 +29,8 @@ from .services import (
     create_zip,
     read_xmp_metadata,
     remove_metadata,
+    probe_video_duration,
+    render_video_segments,
     resize_image,
     resize_image_to_dimensions,
     resize_video,
@@ -570,6 +573,59 @@ def preview_upload(request, filename):
         raise Http404
     content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
     return FileResponse(video_path.open("rb"), content_type=content_type)
+
+
+@login_required
+def video_editor(request):
+    directory = _upload_dir(request)
+    video_files = [file for file in _file_context(directory) if file["is_video"]]
+    for video_file in video_files:
+        video_file["preview_url"] = reverse("preview_upload", args=[video_file["name"]])
+    error = None
+    output_path = None
+    timeline_data = []
+    if request.method == "POST":
+        try:
+            clips = json.loads(request.POST.get("clips", "[]"))
+            if not isinstance(clips, list) or not clips or len(clips) > 100:
+                raise ValueError("Füge mindestens einen und höchstens 100 Ausschnitte zur Schnittliste hinzu.")
+
+            render_segments = []
+            total_duration = 0
+            for clip in clips:
+                filename = clip.get("filename", "") if isinstance(clip, dict) else ""
+                if not isinstance(filename, str) or Path(filename).name != filename or Path(filename).suffix.lower() not in VIDEO_EXTENSIONS:
+                    raise ValueError("Die Schnittliste enthält eine ungültige Videodatei.")
+                source = directory / filename
+                if not source.is_file():
+                    raise ValueError("Eine Datei aus der Schnittliste ist nicht mehr verfügbar.")
+                try:
+                    start = float(clip["start"])
+                    end = float(clip["end"])
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise ValueError("Start und Ende eines Ausschnitts müssen gültige Zeiten sein.") from exc
+                duration = probe_video_duration(source)
+                if not math.isfinite(start) or not math.isfinite(end) or not 0 <= start < end <= duration:
+                    raise ValueError(f"Der Ausschnitt für {filename} liegt außerhalb des Videos.")
+                total_duration += end - start
+                if total_duration > 1800:
+                    raise ValueError("Die Gesamtlänge des fertigen Videos darf 30 Minuten nicht überschreiten.")
+                render_segments.append({"path": source, "start": start, "end": end})
+                timeline_data.append({"filename": filename, "start": start, "end": end})
+
+            output_path = directory / f"schnitt-{uuid.uuid4().hex[:12]}.mp4"
+            render_video_segments(render_segments, output_path)
+            return FileResponse(output_path.open("rb"), as_attachment=True, filename="schnitt.mp4", content_type="video/mp4")
+        except (json.JSONDecodeError, RuntimeError, ValueError) as exc:
+            if output_path is not None:
+                output_path.unlink(missing_ok=True)
+            error = str(exc)
+
+    return render(request, "metadata_tool/video_editor.html", {
+        "video_files": video_files,
+        "error": error,
+        "timeline_data": timeline_data,
+    })
 
 
 def _download(data, filename, content_type):

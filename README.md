@@ -2,6 +2,12 @@
 
 Django-Anwendung zum Auslesen und Bearbeiten von XMP-Metadaten in Bild- und Videodateien.
 
+Im angemeldeten Editor können Videos über **Videos schneiden** gekürzt,
+entfernt und in einer frei sortierbaren Schnittliste zusammengesetzt werden.
+Der Export reiht die gewählten Ausschnitte nacheinander aneinander und benötigt
+FFmpeg. Gleichzeitige Videoebenen und eine frei wählbare separate Tonspur sind
+in diesem Schnittmodus noch nicht enthalten.
+
 ## Installation
 
 ### SQLite-Datenbank

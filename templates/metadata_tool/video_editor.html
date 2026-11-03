@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Videos schneiden · Medienarchiv</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --ink:#17313b; --muted:#61747a; --paper:#f6f3ed; --panel:#fffdf9; --line:#d8e1df; --teal:#087f79; --dark:#075d5b; --coral:#e76f51; }
+    * { box-sizing:border-box; } body { margin:0; background:var(--paper); color:var(--ink); font:16px 'DM Sans',sans-serif; }
+    main { max-width:1100px; margin:auto; padding:2rem; } h1,h2 { font-family:'Space Grotesk',sans-serif; }
+    header { display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap; margin-bottom:1.5rem; }
+    a { color:var(--dark); } .workspace { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:1rem; align-items:start; }
+    .panel { padding:1.2rem; background:var(--panel); border:1px solid var(--line); border-radius:8px; }
+    label { display:block; margin:.8rem 0 .35rem; color:var(--muted); font-weight:700; }
+    select,input { width:100%; padding:.7rem; border:1px solid var(--line); border-radius:6px; background:#fff; color:var(--ink); font:inherit; }
+    video { display:block; width:100%; max-height:50vh; margin-top:1rem; aspect-ratio:16/9; object-fit:contain; background:#14272a; }
+    .times { display:grid; grid-template-columns:1fr 1fr; gap:.75rem; }
+    button { padding:.65rem .9rem; border:0; border-radius:6px; background:var(--teal); color:#fff; font:inherit; font-weight:700; cursor:pointer; }
+    button:hover { background:var(--dark); } button:disabled { opacity:.45; cursor:not-allowed; }
+    .controls { display:flex; gap:.5rem; flex-wrap:wrap; margin-top:1rem; } .controls button { flex:1; }
+    .timeline { margin:0; padding:0; list-style:none; counter-reset:clip; }
+    .timeline li { display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:.75rem; align-items:center; padding:.75rem 0; border-bottom:1px solid var(--line); counter-increment:clip; }
+    .timeline li::before { content:counter(clip,decimal-leading-zero); color:var(--coral); font-weight:700; }
+    .clip-name { overflow-wrap:anywhere; font-weight:700; } .clip-range { display:block; margin-top:.2rem; color:var(--muted); font-size:.9rem; }
+    .clip-controls { display:flex; gap:.35rem; } .clip-controls button { padding:.4rem .6rem; }
+    .notice { margin-bottom:1rem; padding:.8rem 1rem; background:#f9dfd3; color:#8e3928; border-radius:6px; }
+    .empty { color:var(--muted); } .export { margin-top:1rem; } .export button { width:100%; padding:.85rem; }
+    @media (max-width:720px) { main { padding:1rem; } .workspace { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div><p>Medienarchiv</p><h1>Videos schneiden</h1></div>
+    <nav><a href="{% url 'index' %}">Zurück zum Editor</a> · <a href="{% url 'archive' %}">Mein Medienarchiv</a></nav>
+  </header>
+  {% if error %}<p class="notice" role="alert">{{ error }}</p>{% endif %}
+  {% if video_files %}
+    <div class="workspace">
+      <section class="panel" aria-labelledby="source-heading">
+        <h2 id="source-heading">Ausschnitt wählen</h2>
+        <label for="source-file">Quellvideo</label>
+        <select id="source-file">
+          {% for file in video_files %}<option value="{{ file.name }}" data-preview="{{ file.preview_url }}">{{ file.name }}</option>{% endfor %}
+        </select>
+        <video id="source-preview" controls preload="metadata"></video>
+        <div class="times">
+          <div><label for="clip-start">Start (Sekunden)</label><input id="clip-start" type="number" min="0" step="0.1" value="0"></div>
+          <div><label for="clip-end">Ende (Sekunden)</label><input id="clip-end" type="number" min="0.1" step="0.1" value="0.1"></div>
+        </div>
+        <div class="controls"><button id="set-start" type="button">Start = aktuelle Position</button><button id="set-end" type="button">Ende = aktuelle Position</button><button id="add-clip" type="button">Ausschnitt hinzufügen</button></div>
+      </section>
+      <section class="panel" aria-labelledby="timeline-heading">
+        <h2 id="timeline-heading">Schnittliste</h2>
+        <ol id="timeline" class="timeline" aria-live="polite"></ol>
+        <p id="timeline-empty" class="empty">Noch keine Ausschnitte hinzugefügt.</p>
+        <form id="export-form" class="export" method="post">
+          {% csrf_token %}<input id="clips-data" type="hidden" name="clips" value="[]">
+          <button id="export-button" type="submit" disabled>Video zusammensetzen und herunterladen</button>
+        </form>
+      </section>
+    </div>
+  {% else %}
+    <section class="panel"><p class="empty">In dieser Sitzung sind noch keine Videos geladen.</p><a href="{% url 'index' %}">Videos im Editor hochladen</a></section>
+  {% endif %}
+</main>
+{% if video_files %}
+{{ timeline_data|json_script:"initial-clips" }}
+<script>
+  const sourceSelect = document.getElementById('source-file');
+  const sourcePreview = document.getElementById('source-preview');
+  const startInput = document.getElementById('clip-start');
+  const endInput = document.getElementById('clip-end');
+  const timeline = document.getElementById('timeline');
+  const timelineEmpty = document.getElementById('timeline-empty');
+  const clipsInput = document.getElementById('clips-data');
+  const exportButton = document.getElementById('export-button');
+  const clips = JSON.parse(document.getElementById('initial-clips').textContent);
+
+  function loadSelectedVideo() {
+    sourcePreview.src = sourceSelect.selectedOptions[0].dataset.preview;
+    sourcePreview.load();
+  }
+
+  function renderTimeline() {
+    timeline.replaceChildren();
+    clips.forEach((clip, index) => {
+      const item = document.createElement('li');
+      const details = document.createElement('div');
+      const name = document.createElement('span');
+      name.className = 'clip-name';
+      name.textContent = clip.filename;
+      const range = document.createElement('span');
+      range.className = 'clip-range';
+      range.textContent = `${clip.start.toFixed(1)} s - ${clip.end.toFixed(1)} s`;
+      details.append(name, range);
+      const controls = document.createElement('div');
+      controls.className = 'clip-controls';
+      [[ 'Nach oben', -1 ], [ 'Nach unten', 1 ], [ 'Entfernen', 0 ]].forEach(([label, direction]) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = label;
+        button.setAttribute('aria-label', `${label}: ${clip.filename}`);
+        button.disabled = direction < 0 && index === 0 || direction > 0 && index === clips.length - 1;
+        button.addEventListener('click', () => {
+          if (direction === 0) clips.splice(index, 1);
+          else [clips[index], clips[index + direction]] = [clips[index + direction], clips[index]];
+          renderTimeline();
+        });
+        controls.append(button);
+      });
+      item.append(details, controls);
+      timeline.append(item);
+    });
+    timelineEmpty.hidden = clips.length > 0;
+    exportButton.disabled = clips.length === 0;
+    clipsInput.value = JSON.stringify(clips);
+  }
+
+  sourceSelect.addEventListener('change', loadSelectedVideo);
+  sourcePreview.addEventListener('loadedmetadata', () => {
+    endInput.value = sourcePreview.duration.toFixed(1);
+    endInput.max = sourcePreview.duration;
+    startInput.max = sourcePreview.duration;
+  });
+  document.getElementById('set-start').addEventListener('click', () => {
+    startInput.value = sourcePreview.currentTime.toFixed(1);
+  });
+  document.getElementById('set-end').addEventListener('click', () => {
+    endInput.value = sourcePreview.currentTime.toFixed(1);
+  });
+  document.getElementById('add-clip').addEventListener('click', () => {
+    const start = Number(startInput.value);
+    const end = Number(endInput.value);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start || end > sourcePreview.duration) {
+      endInput.setCustomValidity('Bitte einen gültigen Bereich innerhalb des Videos auswählen.');
+      endInput.reportValidity();
+      return;
+    }
+    endInput.setCustomValidity('');
+    clips.push({ filename: sourceSelect.value, start, end });
+    renderTimeline();
+  });
+  document.getElementById('export-form').addEventListener('submit', event => {
+    clipsInput.value = JSON.stringify(clips);
+    if (!clips.length) event.preventDefault();
+  });
+  loadSelectedVideo();
+  renderTimeline();
+</script>
+{% endif %}
+</body>
+</html>

@@ -1,4 +1,5 @@
 import io
+import json
 import re
 import zipfile
 from datetime import timedelta
@@ -128,6 +129,65 @@ class UserImageArchiveTests(TestCase):
         self.assertEqual(resized["Content-Type"], "video/mp4")
         resize_video.assert_called_once()
         self.assertTrue(StoredImage.objects.filter(owner=user, original_filename="clip-1280x720.mp4").exists())
+
+    def test_video_editor_renders_ordered_segments(self):
+        user = get_user_model().objects.create_user(username="cut-user", password="ImageVault99!abc")
+        self.client.force_login(user)
+        for filename in ("first.mp4", "second.mp4"):
+            self.client.post("/", {
+                "images": SimpleUploadedFile(filename, b"video", content_type="video/mp4"),
+            })
+
+        page = self.client.get("/video-editor/")
+        self.assertContains(page, "Videos schneiden")
+        self.assertContains(page, "Ausschnitt hinzufügen")
+        clips = [
+            {"filename": "second.mp4", "start": 2.5, "end": 7.0},
+            {"filename": "first.mp4", "start": 0, "end": 4},
+        ]
+        with patch("metadata_tool.views.probe_video_duration", return_value=10), patch(
+            "metadata_tool.views.render_video_segments",
+            side_effect=lambda segments, output_path: output_path.write_bytes(b"cut video"),
+        ) as render_segments:
+            response = self.client.post("/video-editor/", {"clips": json.dumps(clips)})
+
+        self.assertEqual(response["Content-Type"], "video/mp4")
+        self.assertEqual(b"".join(response.streaming_content), b"cut video")
+        rendered = render_segments.call_args.args[0]
+        self.assertEqual([segment["path"].name for segment in rendered], ["second.mp4", "first.mp4"])
+        self.assertEqual([(segment["start"], segment["end"]) for segment in rendered], [(2.5, 7.0), (0.0, 4.0)])
+
+    def test_video_editor_rejects_clip_outside_source_duration(self):
+        user = get_user_model().objects.create_user(username="invalid-cut", password="ImageVault99!abc")
+        self.client.force_login(user)
+        self.client.post("/", {
+            "images": SimpleUploadedFile("source.mp4", b"video", content_type="video/mp4"),
+        })
+        with patch("metadata_tool.views.probe_video_duration", return_value=5), patch(
+            "metadata_tool.views.render_video_segments",
+        ) as render_segments:
+            response = self.client.post("/video-editor/", {
+                "clips": json.dumps([{"filename": "source.mp4", "start": 1, "end": 9}]),
+            })
+
+        self.assertContains(response, "liegt außerhalb des Videos")
+        render_segments.assert_not_called()
+
+    def test_video_editor_keeps_timeline_when_rendering_fails(self):
+        user = get_user_model().objects.create_user(username="retry-cut", password="ImageVault99!abc")
+        self.client.force_login(user)
+        self.client.post("/", {
+            "images": SimpleUploadedFile("source.mp4", b"video", content_type="video/mp4"),
+        })
+        clips = [{"filename": "source.mp4", "start": 1, "end": 4}]
+        with patch("metadata_tool.views.probe_video_duration", return_value=10), patch(
+            "metadata_tool.views.render_video_segments",
+            side_effect=ValueError("FFmpeg konnte nicht rendern"),
+        ):
+            response = self.client.post("/video-editor/", {"clips": json.dumps(clips)})
+
+        self.assertContains(response, "FFmpeg konnte nicht rendern")
+        self.assertEqual(response.context["timeline_data"], [{"filename": "source.mp4", "start": 1.0, "end": 4.0}])
 
     def test_selected_image_can_be_resized_to_pixel_dimensions(self):
         user = get_user_model().objects.create_user(username="resolution-user", password="ImageVault99!abc")

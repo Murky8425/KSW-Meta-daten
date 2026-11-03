@@ -1,5 +1,6 @@
 import io
 import json
+import math
 import shutil
 import subprocess
 import tempfile
@@ -146,6 +147,103 @@ def resize_video(file_path, width, height):
         if result.returncode != 0:
             raise ValueError(result.stderr.strip()[-1000:] or "FFmpeg konnte das Video nicht verarbeiten.")
         return output.read_bytes()
+
+
+def probe_video_duration(file_path):
+    ffprobe = shutil.which("ffprobe")
+    if ffprobe is None:
+        raise RuntimeError("FFprobe wurde nicht gefunden. Installiere FFmpeg mit 'sudo apt install ffmpeg'.")
+    try:
+        result = subprocess.run(
+            [ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", str(file_path)],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("Die Videolänge konnte nicht rechtzeitig ermittelt werden.") from exc
+    if result.returncode != 0:
+        raise ValueError(result.stderr.strip() or "Die Videolänge konnte nicht gelesen werden.")
+    try:
+        duration = float(result.stdout.strip())
+    except ValueError as exc:
+        raise ValueError("Die Videolänge konnte nicht gelesen werden.") from exc
+    if not math.isfinite(duration) or not 0 < duration <= 86_400:
+        raise ValueError("Die Videolänge ist ungültig oder länger als 24 Stunden.")
+    return duration
+
+
+def _video_has_audio(file_path, ffprobe):
+    try:
+        result = subprocess.run(
+            [ffprobe, "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=codec_type", "-of", "csv=p=0", str(file_path)],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("Die Audiospur konnte nicht rechtzeitig geprüft werden.") from exc
+    if result.returncode != 0:
+        raise ValueError(result.stderr.strip() or "Die Audiospur konnte nicht geprüft werden.")
+    return bool(result.stdout.strip())
+
+
+def render_video_segments(segments, output_path):
+    ffmpeg = shutil.which("ffmpeg")
+    ffprobe = shutil.which("ffprobe")
+    if ffmpeg is None or ffprobe is None:
+        raise RuntimeError("FFmpeg wurde nicht gefunden. Installiere es mit 'sudo apt install ffmpeg'.")
+
+    output_path = Path(output_path)
+    part_paths = []
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        for index, segment in enumerate(segments):
+            source = Path(segment["path"])
+            start = float(segment["start"])
+            duration = float(segment["end"]) - start
+            part = temp_path / f"part-{index:03d}.mp4"
+            arguments = [ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-ss", str(start), "-i", str(source)]
+            has_audio = _video_has_audio(source, ffprobe)
+            if not has_audio:
+                arguments.extend(["-f", "lavfi", "-t", str(duration), "-i", "anullsrc=channel_layout=stereo:sample_rate=48000"])
+            arguments.extend([
+                "-t", str(duration), "-map", "0:v:0",
+                "-map", "0:a:0" if has_audio else "1:a:0",
+                "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p",
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                "-c:a", "aac", "-ac", "2", "-ar", "48000", "-b:a", "128k",
+                "-movflags", "+faststart", str(part),
+            ])
+            try:
+                result = subprocess.run(arguments, capture_output=True, text=True, check=False, timeout=1800)
+            except subprocess.TimeoutExpired as exc:
+                raise RuntimeError("Ein Videoausschnitt hat das Zeitlimit von 30 Minuten überschritten.") from exc
+            if result.returncode != 0:
+                raise ValueError(result.stderr.strip()[-1000:] or "Ein Videoausschnitt konnte nicht verarbeitet werden.")
+            part_paths.append(part)
+
+        concat_file = temp_path / "segments.txt"
+        concat_lines = []
+        for part in part_paths:
+            escaped_path = str(part).replace("\\", "\\\\").replace("'", "'\\''")
+            concat_lines.append(f"file '{escaped_path}'\n")
+        concat_file.write_text("".join(concat_lines), encoding="utf-8")
+        try:
+            result = subprocess.run(
+                [ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_file), "-c", "copy", "-movflags", "+faststart", str(output_path)],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=1800,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError("Das Zusammensetzen hat das Zeitlimit von 30 Minuten überschritten.") from exc
+        if result.returncode != 0:
+            raise ValueError(result.stderr.strip()[-1000:] or "Die Videoausschnitte konnten nicht zusammengesetzt werden.")
+    return output_path
 
 
 def convert_image(file_path, target_format):
