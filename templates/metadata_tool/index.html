@@ -26,7 +26,8 @@
     @media (max-width:600px) { main { padding:1.5rem 1rem 3rem; } .hero { padding:1.6rem; } .fields { grid-template-columns:1fr; } .wide { grid-column:auto; } }
   </style>
 <style>
-  .preview video { width:100%; aspect-ratio:16/9; object-fit:contain; background:#14272a; border-radius:10px; }
+  .preview:has(video) { grid-column:1 / -1; }
+  .preview video { display:block; width:100%; max-height:72vh; aspect-ratio:16/9; object-fit:contain; background:#14272a; border-radius:10px; }
   .video-selected form:has(input[name="action"][value="resize"]), .video-selected form:has(input[name="action"][value="convert"]), .video-in-selection form:has(input[name="action"][value="batch-resize"]), .video-in-selection form:has(input[name="action"][value="batch-convert"]) { display:none !important; }
 </style>
 </head>
