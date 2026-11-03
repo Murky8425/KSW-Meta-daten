@@ -27,9 +27,10 @@ from .models import AccountLifecycle, ExtractedMetadata, StoredImage, UserPrefer
 from .services import (
     convert_image,
     create_zip,
+    probe_video_duration,
     read_xmp_metadata,
     remove_metadata,
-    probe_video_duration,
+    render_video_mosaic,
     render_video_segments,
     resize_image,
     resize_image_to_dimensions,
@@ -39,6 +40,7 @@ from .services import (
 
 
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm"}
+AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac", ".opus"}
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp", ".heic", ".avif"} | VIDEO_EXTENSIONS
 
 
@@ -625,6 +627,86 @@ def video_editor(request):
         "video_files": video_files,
         "error": error,
         "timeline_data": timeline_data,
+    })
+
+
+@login_required
+def video_mixer(request):
+    directory = _upload_dir(request)
+    video_files = [file for file in _file_context(directory) if file["is_video"]]
+    audio_directory = directory / ".mixer-audio"
+    audio_directory.mkdir(exist_ok=True)
+    audio_files = sorted(path.name for path in audio_directory.iterdir() if path.is_file() and path.suffix.lower() in AUDIO_EXTENSIONS)
+    audio_files = [{"name": name, "audio_value": f"external:{name}"} for name in audio_files]
+    selected_video_names = request.POST.getlist("videos") if request.method == "POST" else [file["name"] for file in video_files]
+    selected_audio = request.POST.get("audio_source")
+    if not selected_audio:
+        mixer_audio = request.session.get("mixer_audio", "")
+        selected_audio = f"external:{mixer_audio}" if any(file["name"] == mixer_audio for file in audio_files) else "none"
+    for video_file in video_files:
+        video_file["audio_value"] = f"video:{video_file['name']}"
+    error = None
+
+    if request.method == "POST" and request.POST.get("action") == "upload-audio":
+        uploaded = request.FILES.get("audio_file")
+        if uploaded is None:
+            error = "Wähle zuerst eine Audiodatei aus."
+        elif Path(uploaded.name).suffix.lower() not in AUDIO_EXTENSIONS:
+            error = "Unterstützt werden MP3, WAV, M4A, AAC, OGG, FLAC und OPUS."
+        elif uploaded.size > 100 * 1024 * 1024:
+            error = "Audiodateien dürfen höchstens 100 MB groß sein."
+        else:
+            audio_name = f"audio-{uuid.uuid4().hex[:12]}{Path(uploaded.name).suffix.lower()}"
+            audio_path = audio_directory / audio_name
+            with audio_path.open("wb") as destination:
+                for chunk in uploaded.chunks():
+                    destination.write(chunk)
+            request.session["mixer_audio"] = audio_name
+            return redirect("video_mixer")
+
+    elif request.method == "POST":
+        output_path = None
+        try:
+            if not video_files:
+                raise ValueError("Lade zuerst Videos im Editor hoch.")
+            available_names = {file["name"] for file in video_files}
+            unique_names = list(dict.fromkeys(selected_video_names))
+            if not unique_names or len(unique_names) > 100:
+                raise ValueError("Wähle mindestens ein und höchstens 100 Videos aus.")
+            if any(name not in available_names for name in unique_names):
+                raise ValueError("Die Auswahl enthält ein Video, das in dieser Sitzung nicht verfügbar ist.")
+
+            audio_source_value = request.POST.get("audio_source", "none")
+            audio_source = None
+            if audio_source_value.startswith("video:"):
+                audio_name = audio_source_value.removeprefix("video:")
+                if audio_name not in unique_names:
+                    raise ValueError("Das Video der Tonspur muss ebenfalls ausgewählt sein.")
+                audio_source = ("video", directory / audio_name, 0)
+            elif audio_source_value.startswith("external:"):
+                audio_name = audio_source_value.removeprefix("external:")
+                if Path(audio_name).name != audio_name or audio_name not in {file["name"] for file in audio_files}:
+                    raise ValueError("Die gewählte Audiodatei ist nicht verfügbar.")
+                audio_source = ("external", audio_directory / audio_name, 0)
+            elif audio_source_value != "none":
+                raise ValueError("Die gewählte Tonspur ist ungültig.")
+
+            output_path = directory / f"mischung-{uuid.uuid4().hex[:12]}.mp4"
+            render_video_mosaic([directory / name for name in unique_names], output_path, audio_source)
+            return FileResponse(output_path.open("rb"), as_attachment=True, filename="video-mix.mp4", content_type="video/mp4")
+        except (RuntimeError, ValueError) as exc:
+            if output_path is not None:
+                output_path.unlink(missing_ok=True)
+            error = str(exc)
+
+    for video_file in video_files:
+        video_file["preview_url"] = reverse("preview_upload", args=[video_file["name"]])
+    return render(request, "metadata_tool/video_mixer.html", {
+        "video_files": video_files,
+        "audio_files": audio_files,
+        "selected_video_names": selected_video_names,
+        "selected_audio": selected_audio,
+        "error": error,
     })
 
 

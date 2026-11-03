@@ -246,6 +246,99 @@ def render_video_segments(segments, output_path):
     return output_path
 
 
+def render_video_mosaic(video_paths, output_path, audio_source=None, dimensions=(1920, 1080)):
+    ffmpeg = shutil.which("ffmpeg")
+    ffprobe = shutil.which("ffprobe")
+    if ffmpeg is None or ffprobe is None:
+        raise RuntimeError("FFmpeg wurde nicht gefunden. Installiere es mit 'sudo apt install ffmpeg'.")
+    if not 1 <= len(video_paths) <= 100:
+        raise ValueError("Wähle mindestens ein und höchstens 100 Videos aus.")
+
+    video_paths = [Path(path) for path in video_paths]
+    durations = [probe_video_duration(path) for path in video_paths]
+    duration = max(durations)
+    if duration > 1800:
+        raise ValueError("Die längsten Videos dürfen für einen gemeinsamen Export höchstens 30 Minuten lang sein.")
+
+    audio_input_index = None
+    audio_stream_index = 0
+    external_audio = False
+    if audio_source is not None:
+        audio_kind, audio_path, audio_stream_index = audio_source
+        if audio_kind == "video":
+            audio_path = Path(audio_path)
+            try:
+                audio_stream_index = video_paths.index(audio_path)
+            except ValueError as exc:
+                raise ValueError("Die Tonspur muss aus einem der ausgewählten Videos stammen.") from exc
+            if not _video_has_audio(audio_path, ffprobe):
+                raise ValueError("Das für die Tonspur gewählte Video enthält keine Audiospur.")
+        elif audio_kind == "external":
+            audio_path = Path(audio_path)
+            external_audio = True
+            audio_input_index = len(video_paths)
+        else:
+            raise ValueError("Die gewählte Tonspur ist ungültig.")
+
+    output_width, output_height = dimensions
+    columns = math.ceil(math.sqrt(len(video_paths)))
+    rows = math.ceil(len(video_paths) / columns)
+    tile_width = (output_width // columns) // 2 * 2
+    tile_height = (output_height // rows) // 2 * 2
+    if tile_width < 2 or tile_height < 2:
+        raise ValueError("Für diese Anzahl Videos ist die Ausgabeauflösung zu klein.")
+
+    filter_parts = []
+    video_labels = []
+    for index in range(len(video_paths)):
+        label = f"v{index}"
+        video_labels.append(f"[{label}]")
+        filter_parts.append(
+            f"[{index}:v:0]setpts=PTS-STARTPTS,"
+            f"scale={tile_width}:{tile_height}:force_original_aspect_ratio=decrease:force_divisible_by=2,"
+            f"pad={tile_width}:{tile_height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p[{label}]"
+        )
+
+    if len(video_paths) == 1:
+        filter_parts.append(f"{video_labels[0]}null[vout]")
+    else:
+        layout = "|".join(
+            f"{(index % columns) * tile_width}_{(index // columns) * tile_height}"
+            for index in range(len(video_paths))
+        )
+        filter_parts.append(
+            f"{''.join(video_labels)}xstack=inputs={len(video_paths)}:layout={layout}:fill=black[vout]"
+        )
+
+    if audio_source is not None:
+        audio_label = f"{audio_input_index}:a:0" if external_audio else f"{audio_stream_index}:a:0"
+        filter_parts.append(f"[{audio_label}]aresample=async=1:first_pts=0,apad,atrim=duration={duration}[aout]")
+
+    arguments = [ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-filter_complex_threads", "2"]
+    for path in video_paths:
+        arguments.extend(["-threads", "1", "-i", str(path)])
+    if external_audio:
+        arguments.extend(["-stream_loop", "-1", "-threads", "1", "-i", str(audio_path)])
+    arguments.extend(["-filter_complex", ";".join(filter_parts), "-map", "[vout]"])
+    if audio_source is not None:
+        arguments.extend(["-map", "[aout]"])
+    arguments.extend([
+        "-t", str(duration), "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+        "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+    ])
+    if audio_source is not None:
+        arguments.extend(["-c:a", "aac", "-b:a", "192k"])
+    arguments.append(str(output_path))
+
+    try:
+        result = subprocess.run(arguments, capture_output=True, text=True, check=False, timeout=3600)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("Der Video-Mix hat das Zeitlimit von 60 Minuten überschritten.") from exc
+    if result.returncode != 0:
+        raise ValueError(result.stderr.strip()[-1000:] or "Die Videos konnten nicht zusammengesetzt werden.")
+    return Path(output_path)
+
+
 def convert_image(file_path, target_format):
     formats = {
         "png": ("PNG", "png"),

@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Videos mischen · Medienarchiv</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --ink:#17313b; --muted:#61747a; --paper:#f6f3ed; --panel:#fffdf9; --line:#d8e1df; --teal:#087f79; --dark:#075d5b; --coral:#e76f51; }
+    * { box-sizing:border-box; } body { margin:0; background:var(--paper); color:var(--ink); font:16px 'DM Sans',sans-serif; }
+    main { max-width:1100px; margin:auto; padding:2rem; } h1,h2 { font-family:'Space Grotesk',sans-serif; }
+    header { display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap; margin-bottom:1.5rem; }
+    a { color:var(--dark); } .panel { padding:1.2rem; background:var(--panel); border:1px solid var(--line); border-radius:8px; margin:1rem 0; }
+    .video-list { padding:0; list-style:none; } .video-list li { display:flex; gap:.75rem; align-items:center; padding:.7rem 0; border-bottom:1px solid var(--line); overflow-wrap:anywhere; }
+    input[type=checkbox] { width:1.1rem; height:1.1rem; accent-color:var(--teal); flex:none; }
+    input[type=file],select { width:100%; padding:.7rem; border:1px solid var(--line); border-radius:6px; background:#fff; color:var(--ink); font:inherit; }
+    label,legend { display:block; margin:.8rem 0 .35rem; color:var(--muted); font-weight:700; }
+    fieldset { margin:0; padding:0; border:0; } button { padding:.75rem 1rem; border:0; border-radius:6px; background:var(--teal); color:#fff; font:inherit; font-weight:700; cursor:pointer; }
+    button:hover { background:var(--dark); } .primary { width:100%; margin-top:1rem; padding:.9rem; }
+    .notice { margin-bottom:1rem; padding:.8rem 1rem; background:#f9dfd3; color:#8e3928; border-radius:6px; }
+    .hint { color:var(--muted); } .upload-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:.75rem; align-items:end; }
+    @media (max-width:640px) { main { padding:1rem; } .upload-row { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div><p>Medienarchiv</p><h1>Videos gleichzeitig mischen</h1></div>
+    <nav><a href="{% url 'index' %}">Zurück zum Editor</a> · <a href="{% url 'video_editor' %}">Videos schneiden</a></nav>
+  </header>
+  {% if error %}<p class="notice" role="alert">{{ error }}</p>{% endif %}
+
+  <form class="panel" method="post" enctype="multipart/form-data">
+    {% csrf_token %}<input type="hidden" name="action" value="upload-audio">
+    <h2>Zusätzliche Tonspur</h2>
+    <p class="hint">Optional: eine Audiodatei hochladen. Sie wird privat in dieser Sitzung abgelegt.</p>
+    <div class="upload-row"><div><label for="audio-file">Audiodatei</label><input id="audio-file" type="file" name="audio_file" accept=".mp3,.wav,.m4a,.aac,.ogg,.flac,.opus"></div><button type="submit">Audiospur hochladen</button></div>
+    <p class="hint">MP3, WAV, M4A, AAC, OGG, FLAC oder OPUS; maximal 100 MB.</p>
+    {% if audio_files %}<p class="hint">Hochgeladen: {% for file in audio_files %}{{ file.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+  </form>
+
+  {% if video_files %}
+    <form class="panel" method="post">
+      {% csrf_token %}
+      <h2>Gleichzeitig abspielen</h2>
+      <p class="hint">Die gewählten Videos werden gleichzeitig in einem Raster gezeigt. Bis zu 100 Videos, maximal 30 Minuten. Die Ausgabe ist 1920 × 1080.</p>
+      <fieldset>
+        <legend>Videos im Mix</legend>
+        <ul class="video-list">
+          {% for file in video_files %}
+            <li><input id="video-{{ forloop.counter }}" type="checkbox" name="videos" value="{{ file.name }}" {% if file.name in selected_video_names %}checked{% endif %}><label for="video-{{ forloop.counter }}">{{ file.name }}</label></li>
+          {% endfor %}
+        </ul>
+      </fieldset>
+      <label for="audio-source">Tonspur</label>
+      <select id="audio-source" name="audio_source">
+        <option value="none" {% if selected_audio == 'none' %}selected{% endif %}>Ohne Ton</option>
+        {% for file in video_files %}<option value="{{ file.audio_value }}" {% if selected_audio == file.audio_value %}selected{% endif %}>Ton aus: {{ file.name }}</option>{% endfor %}
+        {% for file in audio_files %}<option value="{{ file.audio_value }}" {% if selected_audio == file.audio_value %}selected{% endif %}>Audiodatei: {{ file.name }}</option>{% endfor %}
+      </select>
+      <button class="primary" type="submit">Mix erstellen und herunterladen</button>
+    </form>
+  {% else %}
+    <section class="panel"><p class="hint">In dieser Sitzung sind noch keine Videos geladen.</p><a href="{% url 'index' %}">Videos im Editor hochladen</a></section>
+  {% endif %}
+</main>
+</body>
+</html>

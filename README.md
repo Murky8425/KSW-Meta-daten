@@ -6,7 +6,9 @@ Im angemeldeten Editor können Videos über **Videos schneiden** gekürzt,
 entfernt und in einer frei sortierbaren Schnittliste zusammengesetzt werden.
 Der Export reiht die gewählten Ausschnitte nacheinander aneinander und benötigt
 FFmpeg. Gleichzeitige Videoebenen und eine frei wählbare separate Tonspur sind
-in diesem Schnittmodus noch nicht enthalten.
+im **Videos mischen**-Modus verfügbar: Dort laufen die ausgewählten Videos in
+einem Raster gleichzeitig. Die Tonspur kann aus einem ausgewählten Video oder
+einer separat hochgeladenen Audiodatei stammen.
 
 ## Installation
 

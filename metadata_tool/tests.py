@@ -1,8 +1,10 @@
 import io
 import json
 import re
+import subprocess
 import zipfile
 from datetime import timedelta
+from pathlib import Path
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -14,6 +16,7 @@ from django.utils import timezone
 from PIL import Image
 
 from .models import AccountLifecycle, StoredImage, UserPreference
+from .services import render_video_mosaic
 
 
 @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
@@ -188,6 +191,81 @@ class UserImageArchiveTests(TestCase):
 
         self.assertContains(response, "FFmpeg konnte nicht rendern")
         self.assertEqual(response.context["timeline_data"], [{"filename": "source.mp4", "start": 1.0, "end": 4.0}])
+
+    def test_video_mixer_combines_selected_videos_and_video_audio(self):
+        user = get_user_model().objects.create_user(username="mixer-user", password="ImageVault99!abc")
+        self.client.force_login(user)
+        for filename in ("first.mp4", "second.mp4"):
+            self.client.post("/", {
+                "images": SimpleUploadedFile(filename, b"video", content_type="video/mp4"),
+            })
+
+        page = self.client.get("/video-mixer/")
+        self.assertContains(page, "Videos gleichzeitig mischen")
+        self.assertContains(page, "Ton aus: first.mp4")
+        with patch(
+            "metadata_tool.views.render_video_mosaic",
+            side_effect=lambda paths, output_path, audio_source: output_path.write_bytes(b"video mix"),
+        ) as render_mosaic:
+            response = self.client.post("/video-mixer/", {
+                "videos": ["second.mp4", "first.mp4"],
+                "audio_source": "video:first.mp4",
+            })
+
+        self.assertEqual(response["Content-Type"], "video/mp4")
+        rendered_paths, _, audio_source = render_mosaic.call_args.args
+        self.assertEqual([path.name for path in rendered_paths], ["second.mp4", "first.mp4"])
+        self.assertEqual(audio_source[0], "video")
+        self.assertEqual(audio_source[1].name, "first.mp4")
+
+    def test_video_mixer_uploads_external_audio_to_private_session(self):
+        user = get_user_model().objects.create_user(username="audio-user", password="ImageVault99!abc")
+        self.client.force_login(user)
+        response = self.client.post("/video-mixer/", {
+            "action": "upload-audio",
+            "audio_file": SimpleUploadedFile("music.mp3", b"audio data", content_type="audio/mpeg"),
+        })
+
+        self.assertRedirects(response, "/video-mixer/")
+        audio_name = self.client.session["mixer_audio"]
+        self.assertTrue(audio_name.endswith(".mp3"))
+        self.client.post("/", {
+            "images": SimpleUploadedFile("source.mp4", b"video", content_type="video/mp4"),
+        })
+        page = self.client.get("/video-mixer/")
+        self.assertContains(page, audio_name)
+        self.assertEqual(page.context["selected_audio"], f"external:{audio_name}")
+
+        with patch(
+            "metadata_tool.views.render_video_mosaic",
+            side_effect=lambda paths, output_path, audio_source: output_path.write_bytes(b"video mix"),
+        ) as render_mosaic:
+            mixed = self.client.post("/video-mixer/", {
+                "videos": ["source.mp4"],
+                "audio_source": f"external:{audio_name}",
+            })
+
+        self.assertEqual(mixed["Content-Type"], "video/mp4")
+        audio_source = render_mosaic.call_args.args[2]
+        self.assertEqual(audio_source[0], "external")
+        self.assertEqual(audio_source[1].name, audio_name)
+
+    def test_mosaic_filter_uses_xstack_and_only_selected_audio(self):
+        video_paths = [Path("/tmp/first.mp4"), Path("/tmp/second.mp4")]
+        with patch("metadata_tool.services.shutil.which", side_effect=lambda command: f"/usr/bin/{command}"), patch(
+            "metadata_tool.services.probe_video_duration", return_value=5,
+        ), patch("metadata_tool.services._video_has_audio", return_value=True), patch(
+            "metadata_tool.services.subprocess.run",
+            return_value=subprocess.CompletedProcess([], 0, stdout="", stderr=""),
+        ) as run:
+            result = render_video_mosaic(video_paths, Path("/tmp/mix.mp4"), ("video", video_paths[1], 0))
+
+        self.assertEqual(result, Path("/tmp/mix.mp4"))
+        arguments = run.call_args.args[0]
+        filter_graph = arguments[arguments.index("-filter_complex") + 1]
+        self.assertIn("xstack=inputs=2", filter_graph)
+        self.assertIn("[1:a:0]", filter_graph)
+        self.assertEqual(arguments.count("-i"), 2)
 
     def test_selected_image_can_be_resized_to_pixel_dimensions(self):
         user = get_user_model().objects.create_user(username="resolution-user", password="ImageVault99!abc")
